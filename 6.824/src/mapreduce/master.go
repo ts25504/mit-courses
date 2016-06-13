@@ -30,22 +30,18 @@ func (mr *MapReduce) KillWorkers() *list.List {
 
 func (mr *MapReduce) RunMaster() *list.List {
 	// Your code here
-	mapDoneChannel := make(chan int, mr.nMap)
-	reduceDoneChannel := make(chan int, mr.nReduce)
+	jobDoneChannel := make(chan int)
 
 	for i := 0; i < mr.nMap; i++ {
 		go func(jobNumber int) {
 			for {
-				worker := <-mr.registerChannel
-				jobArgs := &DoJobArgs{}
+				worker := <-mr.idleWorkerChannel
+				jobArgs := &DoJobArgs{mr.file, Map, jobNumber, mr.nReduce}
 				jobReply := &DoJobReply{}
-				jobArgs.File = mr.file
-				jobArgs.JobNumber = jobNumber
-				jobArgs.Operation = Map
-				jobArgs.NumOtherPhase = mr.nReduce
 				ok := call(worker, "Worker.DoJob", jobArgs, jobReply)
 				if ok == true {
-					mapDoneChannel <- i
+					mr.idleWorkerChannel <- worker
+					jobDoneChannel <- jobNumber
 					return
 				}
 			}
@@ -53,22 +49,19 @@ func (mr *MapReduce) RunMaster() *list.List {
 	}
 
 	for i := 0; i < mr.nMap; i++ {
-		<-mapDoneChannel
+		<-jobDoneChannel
 	}
 
 	for i := 0; i < mr.nReduce; i++ {
 		go func(jobNumber int) {
 			for {
-				worker := <-mr.registerChannel
-				jobArgs := &DoJobArgs{}
+				worker := <-mr.idleWorkerChannel
+				jobArgs := &DoJobArgs{mr.file, Reduce, jobNumber, mr.nMap}
 				jobReply := &DoJobReply{}
-				jobArgs.File = mr.file
-				jobArgs.JobNumber = jobNumber
-				jobArgs.Operation = Reduce
-				jobArgs.NumOtherPhase = mr.nMap
 				ok := call(worker, "Worker.DoJob", jobArgs, jobReply)
 				if ok == true {
-					reduceDoneChannel <- i
+					mr.idleWorkerChannel <- worker
+					jobDoneChannel <- jobNumber
 					return
 				}
 			}
@@ -76,7 +69,7 @@ func (mr *MapReduce) RunMaster() *list.List {
 	}
 
 	for i := 0; i < mr.nReduce; i++ {
-		<-reduceDoneChannel
+		<-jobDoneChannel
 	}
 
 	return mr.KillWorkers()
