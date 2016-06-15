@@ -30,6 +30,8 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 
 	// Your code here.
 	vs.mu.Lock()
+	defer vs.mu.Unlock()
+
 	switch args.Me {
 		case vs.currentView.Primary:
 			if args.Viewnum == vs.currentView.Viewnum {
@@ -65,7 +67,6 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 	}
 
 	reply.View = vs.currentView
-	vs.mu.Unlock()
 
 	return nil
 }
@@ -77,8 +78,9 @@ func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
 
 	// Your code here.
 	vs.mu.Lock()
+	defer vs.mu.Unlock()
+
 	reply.View = vs.currentView
-	vs.mu.Unlock()
 
 	return nil
 }
@@ -93,11 +95,12 @@ func (vs *ViewServer) tick() {
 
 	// Your code here.
 
+	vs.mu.Lock()
+	defer vs.mu.Unlock()
+
 	if vs.ack == false {
 		return
 	}
-
-	vs.mu.Lock()
 
 	t1 := time.Now()
 	if vs.currentView.Primary != "" {
@@ -120,7 +123,6 @@ func (vs *ViewServer) tick() {
 			vs.ack = false
 		}
 	}
-	vs.mu.Unlock()
 }
 
 //
