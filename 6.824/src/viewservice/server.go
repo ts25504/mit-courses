@@ -36,7 +36,7 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 				vs.ack = true
 				vs.recentTime[vs.currentView.Primary] = time.Now()
 			} else {
-				if vs.currentView.Backup != "" && vs.ack {
+				if vs.ack {
 					vs.currentView.Primary = vs.currentView.Backup
 					vs.currentView.Backup = ""
 					vs.currentView.Viewnum += 1
