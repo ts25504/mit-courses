@@ -153,6 +153,7 @@ func StartServer(me string) *ViewServer {
 	// Your vs.* initializations here.
 	vs.recentTime = make(map[string]time.Time)
 	vs.ack = false
+	vs.currentView = View{}
 
 	// tell net/rpc about our RPC server and handlers.
 	rpcs := rpc.NewServer()
