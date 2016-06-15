@@ -18,6 +18,9 @@ type ViewServer struct {
 
 
 	// Your declarations here.
+	currentView View
+	recentTime map[string]time.Time
+	ack bool
 }
 
 //
@@ -26,6 +29,43 @@ type ViewServer struct {
 func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 
 	// Your code here.
+	vs.mu.Lock()
+	switch args.Me {
+		case vs.currentView.Primary:
+			if args.Viewnum == vs.currentView.Viewnum {
+				vs.ack = true
+				vs.recentTime[vs.currentView.Primary] = time.Now()
+			} else {
+				if vs.currentView.Backup != "" && vs.ack {
+					vs.currentView.Primary = vs.currentView.Backup
+					vs.currentView.Backup = ""
+					vs.currentView.Viewnum += 1
+					vs.ack = false
+				}
+			}
+		case vs.currentView.Backup:
+			if args.Viewnum == vs.currentView.Viewnum {
+				vs.recentTime[vs.currentView.Backup] = time.Now()
+			} else {
+				if vs.ack {
+					vs.currentView.Backup = ""
+					vs.ack = false
+				}
+			}
+		default:
+			if vs.currentView.Primary == "" {
+				vs.currentView.Primary = args.Me
+				vs.currentView.Viewnum += 1
+				vs.ack = false
+			} else if vs.currentView.Backup == "" && vs.ack {
+				vs.currentView.Backup = args.Me
+				vs.currentView.Viewnum += 1
+				vs.ack = false
+			}
+	}
+
+	reply.View = vs.currentView
+	vs.mu.Unlock()
 
 	return nil
 }
@@ -36,6 +76,9 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
 
 	// Your code here.
+	vs.mu.Lock()
+	reply.View = vs.currentView
+	vs.mu.Unlock()
 
 	return nil
 }
@@ -49,6 +92,35 @@ func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
 func (vs *ViewServer) tick() {
 
 	// Your code here.
+
+	if vs.ack == false {
+		return
+	}
+
+	vs.mu.Lock()
+
+	t1 := time.Now()
+	if vs.currentView.Primary != "" {
+		t2 := vs.recentTime[vs.currentView.Primary]
+
+		if t1.Sub(t2) > DeadPings * PingInterval {
+			vs.currentView.Primary = vs.currentView.Backup
+			vs.currentView.Backup = ""
+			vs.currentView.Viewnum += 1
+			vs.ack = false
+		}
+	}
+
+	if vs.currentView.Backup != "" {
+		t2 := vs.recentTime[vs.currentView.Backup]
+
+		if t1.Sub(t2) > DeadPings * PingInterval {
+			vs.currentView.Backup = ""
+			vs.currentView.Viewnum += 1
+			vs.ack = false
+		}
+	}
+	vs.mu.Unlock()
 }
 
 //
@@ -77,6 +149,8 @@ func StartServer(me string) *ViewServer {
 	vs := new(ViewServer)
 	vs.me = me
 	// Your vs.* initializations here.
+	vs.recentTime = make(map[string]time.Time)
+	vs.ack = false
 
 	// tell net/rpc about our RPC server and handlers.
 	rpcs := rpc.NewServer()
