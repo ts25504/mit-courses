@@ -23,6 +23,30 @@ type ViewServer struct {
 	ack bool
 }
 
+func (vs *ViewServer) promote() {
+	vs.currentView.Primary = vs.currentView.Backup
+	vs.currentView.Backup = ""
+	vs.currentView.Viewnum += 1
+	vs.ack = false
+}
+
+func (vs *ViewServer) removeBackup() {
+	vs.currentView.Backup = ""
+	vs.ack = false
+}
+
+func (vs *ViewServer) acceptPrimary(primary string) {
+	vs.currentView.Primary = primary
+	vs.currentView.Viewnum += 1
+	vs.ack = false
+}
+
+func (vs *ViewServer) acceptBackup(backup string) {
+	vs.currentView.Backup = backup
+	vs.currentView.Viewnum += 1
+	vs.ack = false
+}
+
 //
 // server Ping RPC handler.
 //
@@ -39,10 +63,7 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 				vs.recentTime[vs.currentView.Primary] = time.Now()
 			} else {
 				if vs.ack {
-					vs.currentView.Primary = vs.currentView.Backup
-					vs.currentView.Backup = ""
-					vs.currentView.Viewnum += 1
-					vs.ack = false
+					vs.promote()
 				}
 			}
 		case vs.currentView.Backup:
@@ -50,19 +71,14 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 				vs.recentTime[vs.currentView.Backup] = time.Now()
 			} else {
 				if vs.ack {
-					vs.currentView.Backup = ""
-					vs.ack = false
+					vs.removeBackup()
 				}
 			}
 		default:
 			if vs.currentView.Primary == "" {
-				vs.currentView.Primary = args.Me
-				vs.currentView.Viewnum += 1
-				vs.ack = false
+				vs.acceptPrimary(args.Me)
 			} else if vs.currentView.Backup == "" && vs.ack {
-				vs.currentView.Backup = args.Me
-				vs.currentView.Viewnum += 1
-				vs.ack = false
+				vs.acceptBackup(args.Me)
 			}
 	}
 
@@ -107,10 +123,7 @@ func (vs *ViewServer) tick() {
 		t2 := vs.recentTime[vs.currentView.Primary]
 
 		if t1.Sub(t2) > DeadPings * PingInterval {
-			vs.currentView.Primary = vs.currentView.Backup
-			vs.currentView.Backup = ""
-			vs.currentView.Viewnum += 1
-			vs.ack = false
+			vs.promote()
 		}
 	}
 
@@ -118,9 +131,7 @@ func (vs *ViewServer) tick() {
 		t2 := vs.recentTime[vs.currentView.Backup]
 
 		if t1.Sub(t2) > DeadPings * PingInterval {
-			vs.currentView.Backup = ""
-			vs.currentView.Viewnum += 1
-			vs.ack = false
+			vs.removeBackup()
 		}
 	}
 }
