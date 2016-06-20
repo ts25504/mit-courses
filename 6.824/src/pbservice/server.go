@@ -62,7 +62,7 @@ func (pb *PBServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error 
 	} else {
 		value := pb.database[args.Key]
 		value += args.Value
-		pb.database[args.Key] = args.Value
+		pb.database[args.Key] = value
 	}
 	reply.Err = OK
 
