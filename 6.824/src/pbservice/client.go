@@ -84,10 +84,12 @@ func (ck *Clerk) updateCurrentPrimary() {
 func (ck *Clerk) Get(key string) string {
 
 	// Your code here.
+	id := nrand()
 	for {
 		ck.updateCurrentPrimary()
 		args := &GetArgs{}
 		args.Key = key
+		args.Id = id
 		var reply GetReply
 
 		for i := 0; i < viewservice.DeadPings; i++ {
@@ -116,12 +118,14 @@ func (ck *Clerk) Get(key string) string {
 func (ck *Clerk) PutAppend(key string, value string, op string) {
 
 	// Your code here.
+	id := nrand()
 	for {
 		ck.updateCurrentPrimary()
 		args := &PutAppendArgs{}
 		args.Key = key
 		args.Value = value
 		args.Op = op
+		args.Id = id
 		var reply PutAppendReply
 
 		for i := 0; i < viewservice.DeadPings; i++ {

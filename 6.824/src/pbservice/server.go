@@ -22,6 +22,7 @@ type PBServer struct {
 	// Your declarations here.
 	view       viewservice.View
 	database   map[string]string
+	clients    map[int64]string
 }
 
 
@@ -30,6 +31,13 @@ func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 	// Your code here.
 	pb.mu.Lock()
 	defer pb.mu.Unlock()
+
+	v, ok := pb.clients[args.Id]
+	if ok {
+		reply.Value = v
+		reply.Err = OK
+		return nil
+	}
 
 	if pb.view.Primary == pb.me {
 		value, ok := pb.database[args.Key]
@@ -51,6 +59,12 @@ func (pb *PBServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error 
 	// Your code here.
 	pb.mu.Lock()
 	defer pb.mu.Unlock()
+
+	_, ok := pb.clients[args.Id]
+	if ok {
+		reply.Err = OK
+		return nil
+	}
 
 	if pb.view.Primary != pb.me {
 		reply.Err = ErrWrongServer
@@ -141,6 +155,7 @@ func StartServer(vshost string, me string) *PBServer {
 	// Your pb.* initializations here.
 	pb.view = viewservice.View{}
 	pb.database = make(map[string]string)
+	pb.clients = make(map[int64]string)
 
 	rpcs := rpc.NewServer()
 	rpcs.Register(pb)
