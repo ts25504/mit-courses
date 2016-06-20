@@ -18,32 +18,32 @@ type ViewServer struct {
 
 
 	// Your declarations here.
-	currentView View
-	recentTime map[string]time.Time
+	currentview View
+	recenttime map[string]time.Time
 	ack bool
 }
 
 func (vs *ViewServer) promote() {
-	vs.currentView.Primary = vs.currentView.Backup
-	vs.currentView.Backup = ""
-	vs.currentView.Viewnum += 1
+	vs.currentview.Primary = vs.currentview.Backup
+	vs.currentview.Backup = ""
+	vs.currentview.Viewnum += 1
 	vs.ack = false
 }
 
 func (vs *ViewServer) removeBackup() {
-	vs.currentView.Backup = ""
+	vs.currentview.Backup = ""
 	vs.ack = false
 }
 
 func (vs *ViewServer) acceptPrimary(primary string) {
-	vs.currentView.Primary = primary
-	vs.currentView.Viewnum += 1
+	vs.currentview.Primary = primary
+	vs.currentview.Viewnum += 1
 	vs.ack = false
 }
 
 func (vs *ViewServer) acceptBackup(backup string) {
-	vs.currentView.Backup = backup
-	vs.currentView.Viewnum += 1
+	vs.currentview.Backup = backup
+	vs.currentview.Viewnum += 1
 	vs.ack = false
 }
 
@@ -57,32 +57,32 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 	defer vs.mu.Unlock()
 
 	switch args.Me {
-		case vs.currentView.Primary:
-			if args.Viewnum == vs.currentView.Viewnum {
+		case vs.currentview.Primary:
+			if args.Viewnum == vs.currentview.Viewnum {
 				vs.ack = true
-				vs.recentTime[vs.currentView.Primary] = time.Now()
+				vs.recenttime[vs.currentview.Primary] = time.Now()
 			} else {
 				if vs.ack {
 					vs.promote()
 				}
 			}
-		case vs.currentView.Backup:
-			if args.Viewnum == vs.currentView.Viewnum {
-				vs.recentTime[vs.currentView.Backup] = time.Now()
+		case vs.currentview.Backup:
+			if args.Viewnum == vs.currentview.Viewnum {
+				vs.recenttime[vs.currentview.Backup] = time.Now()
 			} else {
 				if vs.ack {
 					vs.removeBackup()
 				}
 			}
 		default:
-			if vs.currentView.Primary == "" {
+			if vs.currentview.Primary == "" {
 				vs.acceptPrimary(args.Me)
-			} else if vs.currentView.Backup == "" && vs.ack {
+			} else if vs.currentview.Backup == "" && vs.ack {
 				vs.acceptBackup(args.Me)
 			}
 	}
 
-	reply.View = vs.currentView
+	reply.View = vs.currentview
 
 	return nil
 }
@@ -96,7 +96,7 @@ func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
 	vs.mu.Lock()
 	defer vs.mu.Unlock()
 
-	reply.View = vs.currentView
+	reply.View = vs.currentview
 
 	return nil
 }
@@ -119,16 +119,16 @@ func (vs *ViewServer) tick() {
 	}
 
 	t1 := time.Now()
-	if vs.currentView.Primary != "" {
-		t2 := vs.recentTime[vs.currentView.Primary]
+	if vs.currentview.Primary != "" {
+		t2 := vs.recenttime[vs.currentview.Primary]
 
 		if t1.Sub(t2) > DeadPings * PingInterval {
 			vs.promote()
 		}
 	}
 
-	if vs.currentView.Backup != "" {
-		t2 := vs.recentTime[vs.currentView.Backup]
+	if vs.currentview.Backup != "" {
+		t2 := vs.recenttime[vs.currentview.Backup]
 
 		if t1.Sub(t2) > DeadPings * PingInterval {
 			vs.removeBackup()
@@ -162,9 +162,9 @@ func StartServer(me string) *ViewServer {
 	vs := new(ViewServer)
 	vs.me = me
 	// Your vs.* initializations here.
-	vs.recentTime = make(map[string]time.Time)
+	vs.recenttime = make(map[string]time.Time)
 	vs.ack = false
-	vs.currentView = View{}
+	vs.currentview = View{}
 
 	// tell net/rpc about our RPC server and handlers.
 	rpcs := rpc.NewServer()

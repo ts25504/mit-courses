@@ -11,8 +11,6 @@ import "sync/atomic"
 import "os"
 import "syscall"
 import "math/rand"
-import "strconv"
-import "hash/fnv"
 
 type PBServer struct {
 	mu         sync.Mutex
