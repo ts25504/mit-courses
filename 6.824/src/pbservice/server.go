@@ -11,8 +11,8 @@ import "sync/atomic"
 import "os"
 import "syscall"
 import "math/rand"
-
-
+import "strconv"
+import "hash/fnv"
 
 type PBServer struct {
 	mu         sync.Mutex
@@ -22,25 +22,63 @@ type PBServer struct {
 	me         string
 	vs         *viewservice.Clerk
 	// Your declarations here.
+	view       viewservice.View
+	database   map[string]string
 }
 
 
 func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 
 	// Your code here.
+	pb.mu.Lock()
+	defer pb.mu.Unlock()
+
+	if pb.view.Primary == pb.me {
+		value, ok := pb.database[args.Key]
+		if ok {
+			reply.Value = value
+			reply.Err = OK
+		} else {
+			reply.Err = ErrNoKey
+		}
+	} else {
+		reply.Err = ErrWrongServer
+	}
 
 	return nil
 }
-
 
 func (pb *PBServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 
 	// Your code here.
+	pb.mu.Lock()
+	defer pb.mu.Unlock()
 
+	if pb.view.Primary != pb.me {
+		reply.Err = ErrWrongServer
+		return nil
+	}
+
+	if args.Op == "Put" {
+		pb.database[args.Key] = args.Value
+	} else {
+		value := pb.database[args.Key]
+		value += args.Value
+		pb.database[args.Key] = args.Value
+	}
+	reply.Err = OK
 
 	return nil
 }
 
+func (pb *PBServer) Copy(args *CopyArgs, reply *CopyReply) error {
+	pb.mu.Lock()
+	defer pb.mu.Unlock()
+
+	pb.database = args.Database
+
+	return nil
+}
 
 //
 // ping the viewserver periodically.
@@ -51,6 +89,25 @@ func (pb *PBServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error 
 func (pb *PBServer) tick() {
 
 	// Your code here.
+	pb.mu.Lock()
+	defer pb.mu.Unlock()
+
+	view, err := pb.vs.Ping(pb.view.Viewnum)
+	if err != nil {
+		return
+	}
+
+	if view.Primary == pb.me && view.Backup != "" {
+		args := &CopyArgs{}
+		args.Database = pb.database
+		var reply CopyReply
+		ok := call(view.Backup, "PBServer.Copy", args, &reply)
+		if ok == false {
+			return
+		}
+	}
+
+	pb.view = view
 }
 
 // tell the server to shut itself down.
@@ -84,6 +141,8 @@ func StartServer(vshost string, me string) *PBServer {
 	pb.me = me
 	pb.vs = viewservice.MakeClerk(me, vshost)
 	// Your pb.* initializations here.
+	pb.view = viewservice.View{}
+	pb.database = make(map[string]string)
 
 	rpcs := rpc.NewServer()
 	rpcs.Register(pb)
