@@ -74,6 +74,26 @@ func (ck *Clerk) updateCurrentPrimary() {
 	}
 }
 
+func (ck *Clerk) loopRPCGet(args *GetArgs, reply *GetReply) {
+	for i := 0; i < viewservice.DeadPings; i++ {
+		ok := call(ck.primary, "PBServer.Get", args, reply)
+		if ok {
+			break
+		}
+		time.Sleep(viewservice.PingInterval)
+	}
+}
+
+func (ck *Clerk) loopRPCPutAppend(args *PutAppendArgs, reply *PutAppendReply) {
+	for i := 0; i < viewservice.DeadPings; i++ {
+		ok := call(ck.primary, "PBServer.PutAppend", args, reply)
+		if ok {
+			break
+		}
+		time.Sleep(viewservice.PingInterval)
+	}
+}
+
 //
 // fetch a key's value from the current primary;
 // if they key has never been set, return "".
@@ -92,12 +112,7 @@ func (ck *Clerk) Get(key string) string {
 		args.Id = id
 		var reply GetReply
 
-		for i := 0; i < viewservice.DeadPings; i++ {
-			ok := call(ck.primary, "PBServer.Get", args, &reply)
-			if ok {
-				break
-			}
-		}
+		ck.loopRPCGet(args, &reply)
 
 		if reply.Err == ErrNoKey {
 			return ""
@@ -128,12 +143,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 		args.Id = id
 		var reply PutAppendReply
 
-		for i := 0; i < viewservice.DeadPings; i++ {
-			ok := call(ck.primary, "PBServer.PutAppend", args, &reply)
-			if ok {
-				break
-			}
-		}
+		ck.loopRPCPutAppend(args, &reply)
 
 		if reply.Err == ErrWrongServer || reply.Err == "" {
 			ck.primary = ""
