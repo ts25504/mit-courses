@@ -94,6 +94,8 @@ func (pb *PBServer) put(args *PutAppendArgs, reply *PutAppendReply) {
 		pb.database[args.Key] = value
 	}
 	reply.Err = OK
+
+	pb.clients[args.Id] = "accepted"
 }
 
 func (pb *PBServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
