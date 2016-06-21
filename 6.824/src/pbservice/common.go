@@ -39,6 +39,7 @@ type GetReply struct {
 // Your RPC definitions here.
 type CopyArgs struct {
 	Database map[string]string
+	Clients map[int64]string
 }
 
 type CopyReply struct {

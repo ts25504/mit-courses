@@ -25,6 +25,17 @@ type PBServer struct {
 	clients    map[int64]string
 }
 
+func (pb *PBServer) get(args *GetArgs, reply *GetReply) {
+	value, ok := pb.database[args.Key]
+	if ok {
+		reply.Value = value
+		reply.Err = OK
+	} else {
+		reply.Err = ErrNoKey
+	}
+
+	pb.clients[args.Id] = reply.Value
+}
 
 func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 
@@ -39,19 +50,50 @@ func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 		return nil
 	}
 
-	if pb.view.Primary == pb.me {
-		value, ok := pb.database[args.Key]
-		if ok {
-			reply.Value = value
-			reply.Err = OK
-		} else {
-			reply.Err = ErrNoKey
-		}
-	} else {
+	if pb.view.Primary != pb.me {
 		reply.Err = ErrWrongServer
+		return nil
 	}
 
+	if pb.view.Backup != "" {
+		ok := call(pb.view.Backup, "PBServer.BackupGet", args, reply)
+		if ok == false {
+			return nil
+		}
+
+		if reply.Err != OK {
+			return nil
+		}
+	}
+
+	pb.get(args, reply)
+
 	return nil
+}
+
+func (pb *PBServer) BackupGet(args *GetArgs, reply *GetReply) error {
+	pb.mu.Lock()
+	defer pb.mu.Unlock()
+
+	if pb.view.Backup != pb.me {
+		reply.Err = ErrWrongServer
+		return nil
+	}
+
+	pb.get(args, reply)
+
+	return nil
+}
+
+func (pb *PBServer) put(args *PutAppendArgs, reply *PutAppendReply) {
+	if args.Op == "Put" {
+		pb.database[args.Key] = args.Value
+	} else {
+		value := pb.database[args.Key]
+		value += args.Value
+		pb.database[args.Key] = value
+	}
+	reply.Err = OK
 }
 
 func (pb *PBServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
@@ -71,14 +113,32 @@ func (pb *PBServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error 
 		return nil
 	}
 
-	if args.Op == "Put" {
-		pb.database[args.Key] = args.Value
-	} else {
-		value := pb.database[args.Key]
-		value += args.Value
-		pb.database[args.Key] = value
+	if pb.view.Backup != "" {
+		ok := call(pb.view.Backup, "PBServer.BackupPutAppend", args, reply)
+		if ok == false {
+			return nil
+		}
+
+		if reply.Err != OK {
+			return nil
+		}
 	}
-	reply.Err = OK
+
+	pb.put(args, reply)
+
+	return nil
+}
+
+func (pb *PBServer) BackupPutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
+	pb.mu.Lock()
+	defer pb.mu.Unlock()
+
+	if pb.view.Backup != pb.me {
+		reply.Err = ErrWrongServer
+		return nil
+	}
+
+	pb.put(args, reply)
 
 	return nil
 }
@@ -88,6 +148,7 @@ func (pb *PBServer) Copy(args *CopyArgs, reply *CopyReply) error {
 	defer pb.mu.Unlock()
 
 	pb.database = args.Database
+	pb.clients = args.Clients
 
 	return nil
 }
@@ -109,9 +170,10 @@ func (pb *PBServer) tick() {
 		return
 	}
 
-	if view.Primary == pb.me && view.Backup != "" {
+	if view.Primary == pb.me && view.Backup != "" && view.Backup != pb.view.Backup {
 		args := &CopyArgs{}
 		args.Database = pb.database
+		args.Clients = pb.clients
 		var reply CopyReply
 		ok := call(view.Backup, "PBServer.Copy", args, &reply)
 		if ok == false {
