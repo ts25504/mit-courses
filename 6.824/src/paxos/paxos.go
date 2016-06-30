@@ -150,6 +150,14 @@ func (px *Paxos) makeInstanceInfo() *InstanceInfo {
 	return info
 }
 
+func (px *Paxos) getNum() {
+	if px.currentNum == -1 {
+		px.currentNum = px.me + 1
+	} else {
+		px.currentNum += len(px.peers)
+	}
+}
+
 func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 	px.mu.Lock()
 	defer px.mu.Unlock()
@@ -172,57 +180,6 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 	}
 
 	return nil
-}
-
-func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
-	px.mu.Lock()
-	defer px.mu.Unlock()
-
-	_, ok := px.instances[args.Seq]
-	if !ok {
-		px.instances[args.Seq] = px.makeInstanceInfo()
-		px.instances[args.Seq].np = args.Num
-		px.instances[args.Seq].na = args.Num
-		px.instances[args.Seq].va = args.Value
-		reply.Err = Ok
-	} else {
-		if args.Num > px.instances[args.Seq].np {
-			px.instances[args.Seq].np = args.Num
-			px.instances[args.Seq].na = args.Num
-			px.instances[args.Seq].va = args.Value
-			reply.Err = Ok
-		} else {
-			reply.Err = Reject
-		}
-	}
-
-	return nil
-}
-
-func (px *Paxos) Decided(args *DecidedArgs, reply *DecidedReply) error {
-	px.mu.Lock()
-	defer px.mu.Unlock()
-
-	_, ok := px.instances[args.Seq]
-	if !ok {
-		px.instances[args.Seq] = px.makeInstanceInfo()
-	}
-	px.instances[args.Seq].na = args.Num
-	px.instances[args.Seq].np = args.Num
-	px.instances[args.Seq].va = args.Value
-	px.instances[args.Seq].status = Decided
-
-	px.maxdone[args.Me] = args.Done
-
-	return nil
-}
-
-func (px *Paxos) getNum() {
-	if px.currentNum == -1 {
-		px.currentNum = px.me + 1
-	} else {
-		px.currentNum += len(px.peers)
-	}
 }
 
 func (px *Paxos) sendPrepare(seq int, v interface{}) (bool, interface{}) {
@@ -261,6 +218,31 @@ func (px *Paxos) sendPrepare(seq int, v interface{}) (bool, interface{}) {
 	return false, nil
 }
 
+func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
+	px.mu.Lock()
+	defer px.mu.Unlock()
+
+	_, ok := px.instances[args.Seq]
+	if !ok {
+		px.instances[args.Seq] = px.makeInstanceInfo()
+		px.instances[args.Seq].np = args.Num
+		px.instances[args.Seq].na = args.Num
+		px.instances[args.Seq].va = args.Value
+		reply.Err = Ok
+	} else {
+		if args.Num >= px.instances[args.Seq].np {
+			px.instances[args.Seq].np = args.Num
+			px.instances[args.Seq].na = args.Num
+			px.instances[args.Seq].va = args.Value
+			reply.Err = Ok
+		} else {
+			reply.Err = Reject
+		}
+	}
+
+	return nil
+}
+
 func (px *Paxos) sendAccept(seq int, v interface{}) bool {
 	args := &AcceptArgs{}
 	args.Seq = seq
@@ -289,6 +271,24 @@ func (px *Paxos) sendAccept(seq int, v interface{}) bool {
 	return false
 }
 
+func (px *Paxos) Decided(args *DecidedArgs, reply *DecidedReply) error {
+	px.mu.Lock()
+	defer px.mu.Unlock()
+
+	_, ok := px.instances[args.Seq]
+	if !ok {
+		px.instances[args.Seq] = px.makeInstanceInfo()
+	}
+	px.instances[args.Seq].na = args.Num
+	px.instances[args.Seq].np = args.Num
+	px.instances[args.Seq].va = args.Value
+	px.instances[args.Seq].status = Decided
+
+	px.maxdone[args.Me] = args.Done
+
+	return nil
+}
+
 func (px *Paxos) sendDecided(seq int, v interface{}) {
 	args := &DecidedArgs{}
 	args.Seq = seq
@@ -312,9 +312,7 @@ func (px *Paxos) proposer(seq int, v interface{}) {
 		px.getNum()
 		ok, va := px.sendPrepare(seq, v);
 		if ok {
-			//fmt.Printf("%d: Prepared %v\n", seq, v)
 			if px.sendAccept(seq, va) {
-				//fmt.Printf("%d: Accepted %v\n", seq, v)
 				px.sendDecided(seq, va)
 				break
 			}
@@ -324,7 +322,6 @@ func (px *Paxos) proposer(seq int, v interface{}) {
 			}
 		}
 	}
-	//fmt.Printf("%d: Proposer end\n", seq)
 }
 
 //
@@ -341,7 +338,6 @@ func (px *Paxos) Start(seq int, v interface{}) {
 	}
 
 	go func() {
-		//fmt.Printf("%d: Start proposer\n", seq)
 		px.proposer(seq, v)
 	}()
 }
@@ -419,6 +415,16 @@ func (px *Paxos) Min() int {
 		if minSeq > px.maxdone[i] {
 			minSeq = px.maxdone[i]
 		}
+	}
+
+	for i, instance := range px.instances {
+		if i > minSeq {
+			continue
+		}
+		if instance.status != Decided {
+			continue
+		}
+		delete(px.instances, i)
 	}
 
 	return minSeq + 1
