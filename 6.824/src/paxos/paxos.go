@@ -316,10 +316,10 @@ func (px *Paxos) proposer(seq int, v interface{}) {
 				px.sendDecided(seq, va)
 				break
 			}
-			status, _ := px.Status(seq)
-			if status == Decided {
-				break
-			}
+		}
+		status, _ := px.Status(seq)
+		if status == Decided {
+			break
 		}
 	}
 }
@@ -417,6 +417,11 @@ func (px *Paxos) Min() int {
 		}
 	}
 
+	px.forgot(minSeq)
+	return minSeq + 1
+}
+
+func (px *Paxos) forgot(minSeq int) {
 	for i, instance := range px.instances {
 		if i > minSeq {
 			continue
@@ -426,8 +431,6 @@ func (px *Paxos) Min() int {
 		}
 		delete(px.instances, i)
 	}
-
-	return minSeq + 1
 }
 
 //
