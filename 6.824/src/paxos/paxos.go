@@ -30,7 +30,7 @@ import "sync"
 import "sync/atomic"
 import "fmt"
 import "math/rand"
-
+import "time"
 
 // px.Status() return values, indicating
 // whether an agreement has been decided,
@@ -45,8 +45,8 @@ const (
 )
 
 type InstanceInfo struct {
-	np int
-	na int
+	np int64
+	na int64
 	va interface{}
 	status Fate
 }
@@ -64,7 +64,6 @@ type Paxos struct {
 	// Your data here.
 	instances  map[int]*InstanceInfo
 	maxdone    []int
-	currentNum int
 }
 
 const (
@@ -74,18 +73,18 @@ const (
 
 type PrepareArgs struct {
 	Seq int
-	Num int
+	Num int64
 }
 
 type PrepareReply struct {
 	Err string
-	AcceptNum int
+	AcceptNum int64
 	AcceptValue interface{}
 }
 
 type AcceptArgs struct {
 	Seq int
-	Num int
+	Num int64
 	Value interface{}
 }
 
@@ -95,7 +94,7 @@ type AcceptReply struct {
 
 type DecidedArgs struct {
 	Seq int
-	Num int
+	Num int64
 	Value interface{}
 	Me int
 	Done int
@@ -149,12 +148,9 @@ func (px *Paxos) makeInstanceInfo() *InstanceInfo {
 	return info
 }
 
-func (px *Paxos) getNum() {
-	if px.currentNum == -1 {
-		px.currentNum = px.me + 1
-	} else {
-		px.currentNum += len(px.peers)
-	}
+func (px *Paxos) getNum() int64 {
+	now := time.Now()
+	return now.UnixNano()
 }
 
 func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
@@ -181,12 +177,12 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 	return nil
 }
 
-func (px *Paxos) sendPrepare(seq int, v interface{}) (bool, interface{}) {
+func (px *Paxos) sendPrepare(seq int, v interface{}, num int64) (bool, interface{}) {
 	args := &PrepareArgs{}
 	args.Seq = seq
-	args.Num = px.currentNum
+	args.Num = num
 	acceptCount := 0
-	acceptNum := 0
+	var acceptNum int64 = 0
 	acceptValue := v
 
 	for i, peer := range px.peers {
@@ -241,10 +237,10 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 	return nil
 }
 
-func (px *Paxos) sendAccept(seq int, v interface{}) bool {
+func (px *Paxos) sendAccept(seq int, v interface{}, num int64) bool {
 	args := &AcceptArgs{}
 	args.Seq = seq
-	args.Num = px.currentNum
+	args.Num = num
 	args.Value = v
 	acceptCount := 0
 
@@ -287,13 +283,13 @@ func (px *Paxos) Decided(args *DecidedArgs, reply *DecidedReply) error {
 	return nil
 }
 
-func (px *Paxos) sendDecided(seq int, v interface{}) {
+func (px *Paxos) sendDecided(seq int, v interface{}, num int64) {
 	args := &DecidedArgs{}
 	args.Seq = seq
 	args.Value = v
 	args.Done = px.maxdone[px.me]
 	args.Me = px.me
-	args.Num = px.currentNum
+	args.Num = num
 
 	for i, peer := range px.peers {
 		var reply DecidedReply
@@ -307,11 +303,11 @@ func (px *Paxos) sendDecided(seq int, v interface{}) {
 
 func (px *Paxos) proposer(seq int, v interface{}) {
 	for {
-		px.getNum()
-		ok, va := px.sendPrepare(seq, v);
+		num := px.getNum()
+		ok, va := px.sendPrepare(seq, v, num);
 		if ok {
-			if px.sendAccept(seq, va) {
-				px.sendDecided(seq, va)
+			if px.sendAccept(seq, va, num) {
+				px.sendDecided(seq, va, num)
 				break
 			}
 		}
@@ -502,7 +498,6 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 	// Your initialization code here.
 	px.instances = make(map[int]*InstanceInfo)
 	px.maxdone = make([]int, len(px.peers))
-	px.currentNum = 0
 	for i := range px.maxdone {
 		px.maxdone[i] = -1
 	}
