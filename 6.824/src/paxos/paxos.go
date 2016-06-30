@@ -75,7 +75,6 @@ const (
 type PrepareArgs struct {
 	Seq int
 	Num int
-	Value interface{}
 }
 
 type PrepareReply struct {
@@ -165,14 +164,14 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 	_, ok := px.instances[args.Seq]
 	if !ok {
 		px.instances[args.Seq] = px.makeInstanceInfo()
-		reply.AcceptNum = args.Num
-		reply.AcceptValue = args.Value
+		reply.AcceptNum = px.instances[args.Seq].na
+		reply.AcceptValue = px.instances[args.Seq].va
 		reply.Err = Ok
 	} else {
 		if args.Num > px.instances[args.Seq].np {
 			px.instances[args.Seq].np = args.Num
-			reply.AcceptNum = args.Num
-			reply.AcceptValue = args.Value
+			reply.AcceptNum = px.instances[args.Seq].na
+			reply.AcceptValue = px.instances[args.Seq].va
 			reply.Err = Ok
 		} else {
 			reply.Err = Reject
@@ -186,10 +185,9 @@ func (px *Paxos) sendPrepare(seq int, v interface{}) (bool, interface{}) {
 	args := &PrepareArgs{}
 	args.Seq = seq
 	args.Num = px.currentNum
-	args.Value = v
 	acceptCount := 0
 	acceptNum := 0
-	var acceptValue interface{}
+	acceptValue := v
 
 	for i, peer := range px.peers {
 		reply := &PrepareReply{}
@@ -215,7 +213,7 @@ func (px *Paxos) sendPrepare(seq int, v interface{}) (bool, interface{}) {
 		return true, acceptValue
 	}
 
-	return false, nil
+	return false, acceptValue
 }
 
 func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
