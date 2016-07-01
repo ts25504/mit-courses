@@ -78,8 +78,8 @@ type PrepareArgs struct {
 
 type PrepareReply struct {
 	Err string
-	AcceptNum int64
-	AcceptValue interface{}
+	Num int64
+	Value interface{}
 }
 
 type AcceptArgs struct {
@@ -155,8 +155,8 @@ func (px *Paxos) getNum() int64 {
 
 func (px *Paxos) doPrepare(args *PrepareArgs, reply *PrepareReply, info *InstanceInfo) {
 	info.np = args.Num
-	reply.AcceptNum = info.na
-	reply.AcceptValue = info.va
+	reply.Num = info.na
+	reply.Value = info.va
 	reply.Err = Ok
 }
 
@@ -193,8 +193,8 @@ func (px *Paxos) sendPrepare(seq int, v interface{}, num int64) (bool, interface
 
 	for i, peer := range px.peers {
 		reply := &PrepareReply{}
-		reply.AcceptNum = 0
-		reply.AcceptValue = nil
+		reply.Num = 0
+		reply.Value = nil
 		reply.Err = Reject
 		if i == px.me {
 			px.Prepare(args, reply)
@@ -204,9 +204,9 @@ func (px *Paxos) sendPrepare(seq int, v interface{}, num int64) (bool, interface
 
 		if reply.Err == Ok {
 			acceptCount += 1
-			if reply.AcceptNum > acceptNum {
-				acceptNum = reply.AcceptNum
-				acceptValue = reply.AcceptValue
+			if reply.Num > acceptNum {
+				acceptNum = reply.Num
+				acceptValue = reply.Value
 			}
 		}
 	}
