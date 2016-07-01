@@ -153,6 +153,17 @@ func (px *Paxos) getNum() int64 {
 	return now.UnixNano()
 }
 
+func (px *Paxos) doPrepare(args *PrepareArgs, reply *PrepareReply, info *InstanceInfo) {
+	info.np = args.Num
+	reply.AcceptNum = info.na
+	reply.AcceptValue = info.va
+	reply.Err = Ok
+}
+
+func (px *Paxos) rejectPrepare(reply *PrepareReply) {
+	reply.Err = Reject
+}
+
 func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 	px.mu.Lock()
 	defer px.mu.Unlock()
@@ -160,17 +171,12 @@ func (px *Paxos) Prepare(args *PrepareArgs, reply *PrepareReply) error {
 	_, ok := px.instances[args.Seq]
 	if !ok {
 		px.instances[args.Seq] = px.makeInstanceInfo()
-		reply.AcceptNum = px.instances[args.Seq].na
-		reply.AcceptValue = px.instances[args.Seq].va
-		reply.Err = Ok
+		px.doPrepare(args, reply, px.instances[args.Seq])
 	} else {
 		if args.Num > px.instances[args.Seq].np {
-			px.instances[args.Seq].np = args.Num
-			reply.AcceptNum = px.instances[args.Seq].na
-			reply.AcceptValue = px.instances[args.Seq].va
-			reply.Err = Ok
+			px.doPrepare(args, reply, px.instances[args.Seq])
 		} else {
-			reply.Err = Reject
+			px.rejectPrepare(reply)
 		}
 	}
 
@@ -212,6 +218,17 @@ func (px *Paxos) sendPrepare(seq int, v interface{}, num int64) (bool, interface
 	return false, acceptValue
 }
 
+func (px *Paxos) doAccept(args *AcceptArgs, reply *AcceptReply, info *InstanceInfo) {
+	info.np = args.Num
+	info.na = args.Num
+	info.va = args.Value
+	reply.Err = Ok
+}
+
+func (px *Paxos) rejectAccept(reply *AcceptReply) {
+	reply.Err = Reject
+}
+
 func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 	px.mu.Lock()
 	defer px.mu.Unlock()
@@ -219,18 +236,12 @@ func (px *Paxos) Accept(args *AcceptArgs, reply *AcceptReply) error {
 	_, ok := px.instances[args.Seq]
 	if !ok {
 		px.instances[args.Seq] = px.makeInstanceInfo()
-		px.instances[args.Seq].np = args.Num
-		px.instances[args.Seq].na = args.Num
-		px.instances[args.Seq].va = args.Value
-		reply.Err = Ok
+		px.doAccept(args, reply, px.instances[args.Seq])
 	} else {
 		if args.Num >= px.instances[args.Seq].np {
-			px.instances[args.Seq].np = args.Num
-			px.instances[args.Seq].na = args.Num
-			px.instances[args.Seq].va = args.Value
-			reply.Err = Ok
+			px.doAccept(args, reply, px.instances[args.Seq])
 		} else {
-			reply.Err = Reject
+			px.rejectAccept(reply)
 		}
 	}
 
