@@ -27,6 +27,10 @@ type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
+	Op    string
+	Key   string
+	Value string
+	Seq   int
 }
 
 type KVPaxos struct {
@@ -38,16 +42,37 @@ type KVPaxos struct {
 	px         *paxos.Paxos
 
 	// Your definitions here.
+	database   map[string]string
+	logs       []Op
+	currentSeq int
 }
-
 
 func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 	// Your code here.
+	v, ok := kv.database[args.Key]
+	if ok {
+		reply.Value = v
+		reply.Err = OK
+	} else {
+		reply.Err = ErrNoKey
+	}
+
 	return nil
 }
 
 func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	// Your code here.
+	if args.Op == "Put" {
+		kv.database[args.Key] = args.Value
+	} else {
+		v, ok := kv.database[args.Key]
+		if ok {
+			kv.database[args.Key] = v + args.Value
+		} else {
+			kv.database[args.Key] = args.Value
+		}
+	}
+	reply.Err = OK
 
 	return nil
 }
@@ -94,6 +119,9 @@ func StartServer(servers []string, me int) *KVPaxos {
 	kv.me = me
 
 	// Your initialization code here.
+	kv.database = make(map[string]string)
+	kv.logs = []Op{}
+	kv.currentSeq = 1
 
 	rpcs := rpc.NewServer()
 	rpcs.Register(kv)
