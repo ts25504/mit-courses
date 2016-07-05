@@ -11,6 +11,7 @@ import "os"
 import "syscall"
 import "encoding/gob"
 import "math/rand"
+import "time"
 
 
 const Debug = 0
@@ -30,7 +31,7 @@ type Op struct {
 	Op    string
 	Key   string
 	Value string
-	Seq   int
+	Id    int64
 }
 
 type KVPaxos struct {
@@ -43,12 +44,67 @@ type KVPaxos struct {
 
 	// Your definitions here.
 	database   map[string]string
-	logs       []Op
 	currentSeq int
+	clients    map[int64]bool
+}
+
+func (kv *KVPaxos) wait(seq int) Op {
+	to := 10 * time.Millisecond
+	for {
+		status, v := kv.px.Status(seq)
+		if status == paxos.Decided {
+			return v.(Op)
+		}
+		time.Sleep(to)
+		if to < 10 * time.Second {
+			to *= 2
+		}
+	}
+}
+
+func (kv *KVPaxos) doOperation(op Op) {
+	kv.clients[op.Id] = true
+
+	if op.Op == "Put" {
+		kv.database[op.Key] = op.Value
+	} else if op.Op == "Append" {
+		v, ok := kv.database[op.Key]
+		if ok {
+			kv.database[op.Key] = v + op.Value
+		} else {
+			kv.database[op.Key] = op.Value
+		}
+	}
+
+	kv.px.Done(kv.currentSeq)
+	kv.currentSeq += 1
+}
+
+func (kv *KVPaxos) runPaxos(op Op) {
+	var accept Op
+	for {
+		status, v := kv.px.Status(kv.currentSeq)
+		if status == paxos.Decided {
+			accept = v.(Op)
+		} else {
+			kv.px.Start(kv.currentSeq, op)
+			accept = kv.wait(kv.currentSeq)
+		}
+		kv.doOperation(accept)
+		if accept.Id == op.Id {
+			break
+		}
+	}
 }
 
 func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 	// Your code here.
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+
+	op := Op{Id: args.Id, Key: args.Key, Op: "GET"}
+	kv.runPaxos(op)
+
 	v, ok := kv.database[args.Key]
 	if ok {
 		reply.Value = v
@@ -62,16 +118,18 @@ func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 
 func (kv *KVPaxos) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	// Your code here.
-	if args.Op == "Put" {
-		kv.database[args.Key] = args.Value
-	} else {
-		v, ok := kv.database[args.Key]
-		if ok {
-			kv.database[args.Key] = v + args.Value
-		} else {
-			kv.database[args.Key] = args.Value
-		}
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+
+	_, ok := kv.clients[args.Id]
+	if ok {
+		reply.Err = OK
+		return nil
 	}
+
+	op := Op{Id: args.Id, Key: args.Key, Value: args.Value, Op: args.Op}
+	kv.runPaxos(op)
+
 	reply.Err = OK
 
 	return nil
@@ -120,8 +178,8 @@ func StartServer(servers []string, me int) *KVPaxos {
 
 	// Your initialization code here.
 	kv.database = make(map[string]string)
-	kv.logs = []Op{}
-	kv.currentSeq = 1
+	kv.currentSeq = 0
+	kv.clients = make(map[int64]bool)
 
 	rpcs := rpc.NewServer()
 	rpcs.Register(kv)

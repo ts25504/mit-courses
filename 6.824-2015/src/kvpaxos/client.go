@@ -106,6 +106,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 			i = (i+1) % len(ck.servers)
 			continue
 		}
+		return
 	}
 }
 
