@@ -64,7 +64,6 @@ func (kv *KVPaxos) wait(seq int) Op {
 
 func (kv *KVPaxos) doOperation(op Op) {
 	kv.clients[op.Id] = true
-
 	if op.Op == "Put" {
 		kv.database[op.Key] = op.Value
 	} else if op.Op == "Append" {
@@ -101,6 +100,13 @@ func (kv *KVPaxos) Get(args *GetArgs, reply *GetReply) error {
 	// Your code here.
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
+
+	_, ok := kv.clients[args.Id]
+	if ok {
+		reply.Value = kv.database[args.Key]
+		reply.Err = OK
+		return nil
+	}
 
 	op := Op{Id: args.Id, Key: args.Key, Op: "GET"}
 	kv.runPaxos(op)
