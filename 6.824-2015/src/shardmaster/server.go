@@ -28,7 +28,7 @@ type ShardMaster struct {
 
 	configs []Config // indexed by config num
 	currentSeq int
-	cfgnum int
+	configNum int
 }
 
 
@@ -63,33 +63,6 @@ func nrand() int64 {
 	return x
 }
 
-
-func GetMaxMinGID(config *Config) (int64, int64) {
-	min_gid, min_count, max_gid, max_count := int64(0), 999, int64(0), -1
-	counts := map[int64]int{}
-	for g := range config.Groups {
-		counts[g] = 0
-	}
-	for _, g := range config.Shards {
-		counts[g]++
-	}
-	for g := range counts {
-		_, exists := config.Groups[g]
-		if exists && min_count > counts[g] {
-			min_gid, min_count = g, counts[g]
-		}
-		if exists && max_count < counts[g] {
-			max_gid, max_count = g, counts[g]
-		}
-	}
-	for _, g := range config.Shards {
-		if g == 0 {
-			max_gid = 0
-		}
-	}
-	return min_gid, max_gid
-}
-
 func GetShardByGID(gid int64, config *Config) int {
 	for s, g := range config.Shards {
 		if g == gid {
@@ -99,28 +72,78 @@ func GetShardByGID(gid int64, config *Config) int {
 	return -1
 }
 
-func (sm *ShardMaster) Rebalance(group int64, isLeave bool) {
-	config := &sm.configs[sm.cfgnum]
-	for i := 0; ; i++ {
-		min_gid, max_gid := GetMaxMinGID(config)
-		if isLeave {
-			s := GetShardByGID(group, config)
-			if s == -1 {
-				break
-			}
-			config.Shards[s] = min_gid
-		} else {
-			if i == NShards / len(config.Groups) {
-				break
-			}
-			shard := GetShardByGID(max_gid, config)
-			config.Shards[shard] = group
+func GetMaxCountGid(config *Config) int64 {
+	max_count := -1
+	max_gid := int64(0)
+	count := map[int64]int{}
+	for i := range config.Groups {
+		count[i] = 0
+	}
+	for _, gid := range config.Shards {
+		count[gid]++
+	}
+	for gid := range count {
+		_, ok := config.Groups[gid]
+		if ok && max_count < count[gid] {
+			max_gid, max_count = gid, count[gid]
 		}
+	}
+	for _, gid := range config.Shards {
+		if gid == 0 {
+			max_gid = 0
+		}
+	}
+
+	return max_gid
+}
+
+func GetMinCountGid(config *Config) int64 {
+	min_count := 1 << 32
+	min_gid := int64(0)
+	count := map[int64]int{}
+	for i := range config.Groups {
+		count[i] = 0
+	}
+	for _, gid := range config.Shards {
+		count[gid]++
+	}
+	for gid := range count {
+		_, ok := config.Groups[gid]
+		if ok && min_count > count[gid] {
+			min_gid, min_count = gid, count[gid]
+		}
+	}
+	return min_gid
+}
+
+func (sm *ShardMaster) balanceJoin(gid int64) {
+	config := &sm.configs[sm.configNum]
+	index := 0
+	for {
+		if index == NShards / len(config.Groups) {
+			break
+		}
+		max_gid := GetMaxCountGid(config)
+		shard := GetShardByGID(max_gid, config)
+		config.Shards[shard] = gid
+		index++
+	}
+}
+
+func (sm *ShardMaster) balanceLeave(gid int64) {
+	config := &sm.configs[sm.configNum]
+	for {
+		min_gid := GetMinCountGid(config)
+		shard := GetShardByGID(gid, config)
+		if shard == -1 {
+			break
+		}
+		config.Shards[shard] = min_gid
 	}
 }
 
 func (sm *ShardMaster) newConfig() *Config {
-	old := &sm.configs[sm.cfgnum]
+	old := &sm.configs[sm.configNum]
 	new := Config{}
 	new.Groups = map[int64][]string{}
 	new.Num = old.Num + 1
@@ -131,9 +154,9 @@ func (sm *ShardMaster) newConfig() *Config {
 	for i, gid := range old.Shards {
 		new.Shards[i] = gid
 	}
-	sm.cfgnum++
+	sm.configNum++
 	sm.configs = append(sm.configs, new)
-	return &sm.configs[sm.cfgnum]
+	return &sm.configs[sm.configNum]
 }
 
 func (sm *ShardMaster) doJoin(gid int64, servers []string) {
@@ -141,7 +164,7 @@ func (sm *ShardMaster) doJoin(gid int64, servers []string) {
 	_, ok := config.Groups[gid]
 	if !ok {
 		config.Groups[gid] = servers
-		sm.Rebalance(gid, false)
+		sm.balanceJoin(gid)
 	}
 }
 
@@ -150,7 +173,7 @@ func (sm *ShardMaster) doLeave(gid int64) {
 	_, ok := config.Groups[gid]
 	if ok {
 		delete(config.Groups, gid)
-		sm.Rebalance(gid, true)
+		sm.balanceLeave(gid)
 	}
 }
 
@@ -161,7 +184,7 @@ func (sm *ShardMaster) doMove(gid int64, shard int) {
 
 func (sm *ShardMaster) doQuery(num int) Config {
 	if num == -1 {
-		return sm.configs[sm.cfgnum]
+		return sm.configs[sm.configNum]
 	} else {
 		return sm.configs[num]
 	}
@@ -281,7 +304,7 @@ func StartServer(servers []string, me int) *ShardMaster {
 	sm.configs = make([]Config, 1)
 	sm.configs[0].Groups = map[int64][]string{}
 	sm.currentSeq = 0
-	sm.cfgnum = 0
+	sm.configNum = 0
 
 	rpcs := rpc.NewServer()
 
