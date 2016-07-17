@@ -64,34 +64,34 @@ func nrand() int64 {
 }
 
 
-func GetGidCounts(c *Config) (int64, int64) {
-	min_id, min_num, max_id, max_num := int64(0), 999, int64(0), -1
+func GetMaxMinGID(config *Config) (int64, int64) {
+	min_gid, min_count, max_gid, max_count := int64(0), 999, int64(0), -1
 	counts := map[int64]int{}
-	for g := range c.Groups {
+	for g := range config.Groups {
 		counts[g] = 0
 	}
-	for _, g := range c.Shards {
+	for _, g := range config.Shards {
 		counts[g]++
 	}
 	for g := range counts {
-		_, exists := c.Groups[g]
-		if exists && min_num > counts[g] {
-			min_id, min_num = g, counts[g]
+		_, exists := config.Groups[g]
+		if exists && min_count > counts[g] {
+			min_gid, min_count = g, counts[g]
 		}
-		if exists && max_num < counts[g] {
-			max_id, max_num = g, counts[g]
+		if exists && max_count < counts[g] {
+			max_gid, max_count = g, counts[g]
 		}
 	}
-	for _, g := range c.Shards {
+	for _, g := range config.Shards {
 		if g == 0 {
-			max_id = 0
+			max_gid = 0
 		}
 	}
-	return min_id, max_id
+	return min_gid, max_gid
 }
 
-func GetShardByGid(gid int64, c *Config) int {
-	for s, g := range c.Shards {
+func GetShardByGID(gid int64, config *Config) int {
+	for s, g := range config.Shards {
 		if g == gid {
 			return s
 		}
@@ -100,21 +100,21 @@ func GetShardByGid(gid int64, c *Config) int {
 }
 
 func (sm *ShardMaster) Rebalance(group int64, isLeave bool) {
-	c := &sm.configs[sm.cfgnum]
+	config := &sm.configs[sm.cfgnum]
 	for i := 0; ; i++ {
-		min_id, max_id := GetGidCounts(c)
+		min_gid, max_gid := GetMaxMinGID(config)
 		if isLeave {
-			s := GetShardByGid(group, c)
+			s := GetShardByGID(group, config)
 			if s == -1 {
 				break
 			}
-			c.Shards[s] = min_id
+			config.Shards[s] = min_gid
 		} else {
-			if i == NShards / len(c.Groups) {
+			if i == NShards / len(config.Groups) {
 				break
 			}
-			s := GetShardByGid(max_id, c)
-			c.Shards[s] = group
+			shard := GetShardByGID(max_gid, config)
+			config.Shards[shard] = group
 		}
 	}
 }
