@@ -17,6 +17,28 @@ func doReduce(
 	nMap int, // the number of map tasks that were run ("M" in the paper)
 	reduceF func(key string, values []string) string,
 ) {
+	// TODO:
+	// You will need to write this function.
+	// You can find the intermediate file for this reduce task from map task number
+	// m using reduceName(jobName, m, reduceTaskNumber).
+	// Remember that you've encoded the values in the intermediate files, so you
+	// will need to decode them. If you chose to use JSON, you can read out
+	// multiple decoded values by creating a decoder, and then repeatedly calling
+	// .Decode() on it until Decode() returns an error.
+	//
+	// You should write the reduced output in as JSON encoded KeyValue
+	// objects to a file named mergeName(jobName, reduceTaskNumber). We require
+	// you to use JSON here because that is what the merger than combines the
+	// output from all the reduce tasks expects. There is nothing "special" about
+	// JSON -- it is just the marshalling format we chose to use. It will look
+	// something like this:
+	//
+	// enc := json.NewEncoder(mergeFile)
+	// for key in ... {
+	// 	enc.Encode(KeyValue{key, reduceF(...)})
+	// }
+	// file.Close()
+
 	kvs := make(map[string][]string)
 	for i := 0; i < nMap; i++ {
 		fileName := reduceName(jobName, i, reduceTaskNumber)
@@ -56,26 +78,4 @@ func doReduce(
 	}
 
 	file.Close()
-
-	// TODO:
-	// You will need to write this function.
-	// You can find the intermediate file for this reduce task from map task number
-	// m using reduceName(jobName, m, reduceTaskNumber).
-	// Remember that you've encoded the values in the intermediate files, so you
-	// will need to decode them. If you chose to use JSON, you can read out
-	// multiple decoded values by creating a decoder, and then repeatedly calling
-	// .Decode() on it until Decode() returns an error.
-	//
-	// You should write the reduced output in as JSON encoded KeyValue
-	// objects to a file named mergeName(jobName, reduceTaskNumber). We require
-	// you to use JSON here because that is what the merger than combines the
-	// output from all the reduce tasks expects. There is nothing "special" about
-	// JSON -- it is just the marshalling format we chose to use. It will look
-	// something like this:
-	//
-	// enc := json.NewEncoder(mergeFile)
-	// for key in ... {
-	// 	enc.Encode(KeyValue{key, reduceF(...)})
-	// }
-	// file.Close()
 }
