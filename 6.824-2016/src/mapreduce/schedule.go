@@ -33,7 +33,6 @@ func (mr *Master) schedule(phase jobPhase) {
 	for i := 0; i < ntasks; i++ {
 		wg.Add(1)
 
-		worker := <-mr.registerChannel
 		var args DoTaskArgs
 		args.File = mr.files[i]
 		args.JobName = mr.jobName
@@ -42,13 +41,16 @@ func (mr *Master) schedule(phase jobPhase) {
 		args.TaskNumber = i
 
 		go func() {
-			ok := call(worker, "Worker.DoTask", args, nil)
-			if ok == false {
-				fmt.Printf("Schedule: RPC %s dotask error\n", worker)
-			} else {
-				wg.Done()
-				mr.registerChannel <- worker
+			var worker string
+			for {
+				worker = <-mr.registerChannel
+				ok := call(worker, "Worker.DoTask", args, nil)
+				if ok == true {
+					break
+				}
 			}
+			wg.Done()
+			mr.registerChannel <- worker
 		}()
 	}
 

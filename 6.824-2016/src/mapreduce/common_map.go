@@ -5,7 +5,6 @@ import (
 	"os"
 	"encoding/json"
 	"log"
-	"fmt"
 )
 
 // doMap does the job of a map worker: it reads one of the input files
@@ -45,7 +44,7 @@ func doMap(
 	//
 	// Remember to close the file after you have written all the values!
 
-	fmt.Printf("Map: read %s\n", inFile)
+	debug("Map: read %s\n", inFile)
 	file, err := os.Open(inFile)
 	if err != nil {
 		log.Fatal("Map: ", err)
@@ -68,7 +67,7 @@ func doMap(
 
 	for i := 0; i < nReduce; i++ {
 		fileName := reduceName(jobName, mapTaskNumber, i)
-		fmt.Printf("Map: write %s\n", fileName)
+		debug("Map: write %s\n", fileName)
 		file, err = os.Create(fileName)
 		if err != nil {
 			log.Fatal("Map: ", err)

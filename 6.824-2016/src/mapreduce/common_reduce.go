@@ -4,7 +4,6 @@ import (
 	"os"
 	"encoding/json"
 	"log"
-	"fmt"
 )
 
 // doReduce does the job of a reduce worker: it reads the intermediate
@@ -42,7 +41,7 @@ func doReduce(
 	kvs := make(map[string][]string)
 	for i := 0; i < nMap; i++ {
 		fileName := reduceName(jobName, i, reduceTaskNumber)
-		fmt.Printf("Reduce: read %s\n", fileName)
+		debug("Reduce: read %s\n", fileName)
 		file, err := os.Open(fileName)
 		if err != nil {
 			log.Fatal("Reduce: ", err)
@@ -63,7 +62,7 @@ func doReduce(
 	}
 
 	fileName := mergeName(jobName, reduceTaskNumber)
-	fmt.Printf("Reduce: write %s\n", fileName)
+	debug("Reduce: write %s\n", fileName)
 	file, err := os.Create(fileName)
 	if err != nil {
 		log.Fatal("Reduce: ", err)
