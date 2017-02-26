@@ -141,7 +141,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		return
 	}
 
-	if args.Entries[args.PrevLogIndex].term != args.PrevLogTerm {
+	if len(rf.logs) <= args.PrevLogIndex || rf.logs[args.PrevLogIndex].term != args.PrevLogTerm {
 		reply.Success = false
 		return
 	}
@@ -152,6 +152,19 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 
 	if rf.state == Leader && args.Term > rf.currentTerm {
 		rf.state = Follower
+	}
+
+	rf.logs = rf.logs[:args.PrevLogIndex+1]
+	for i := 0; i < len(args.Entries); i++ {
+		rf.logs = append(rf.logs, args.Entries[i])
+	}
+
+	if args.LeaderCommit > rf.commitIndex {
+		if args.LeaderCommit < len(rf.logs) - 1 {
+			rf.commitIndex = args.LeaderCommit
+		} else {
+			rf.commitIndex = len(rf.logs) - 1
+		}
 	}
 
 	rf.currentTerm = args.Term
@@ -176,8 +189,12 @@ func (rf *Raft) broadcastAppendEntries() {
 			var args AppendEntriesArgs
 			args.Term = rf.currentTerm
 			args.LeaderId = rf.me
-			args.Entries = rf.logs
-			args.LeaderCommit = rf.commitIndex
+			if len(rf.logs) > 0 {
+				args.PrevLogIndex = rf.nextIndex[i]
+				args.PrevLogTerm = rf.logs[args.PrevLogIndex].term
+				args.Entries = rf.logs[args.PrevLogIndex+1:]
+				args.LeaderCommit = rf.commitIndex
+			}
 
 			var reply AppendEntriesReply
 
@@ -261,6 +278,10 @@ func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *Request
 				rf.state = Leader
 				rf.leaderCh <- true
 			}
+		} else {
+			if reply.Term > rf.currentTerm {
+				rf.state = Follower
+			}
 		}
 	}
 	return ok
@@ -273,11 +294,11 @@ func (rf *Raft) broadcastRequestVote() {
 	for i := 0; i < len(rf.peers); i++ {
 		if i != rf.me {
 			var reply RequestVoteReply
-			DPrintf("Candidate %d: RequestVote to %d", rf.me, i)
+			reply.Term = rf.currentTerm
+			DPrintf("Term %d, Candidate %d: RequestVote to %d", rf.currentTerm, rf.me, i)
 			rf.sendRequestVote(i, args, &reply)
-			if reply.Term > rf.currentTerm {
-				DPrintf("Candidate %d: There is already a leader", rf.me)
-				rf.state = Follower
+			if rf.state != Candidate {
+				DPrintf("Term %d, Candidate %d: There is already a leader", rf.currentTerm, rf.me)
 				break
 			}
 		}
@@ -325,10 +346,10 @@ func (rf *Raft) Kill() {
 func (rf *Raft) workAsFollower() {
 	select {
 	case <-rf.heartbeatCh:
-		DPrintf("Follower %d: Heartbeat", rf.me)
+		DPrintf("Term %d, Follower %d: Heartbeat", rf.currentTerm, rf.me)
 	case <-time.After(time.Duration(rand.Intn(300) + 800) * time.Millisecond):
 		rf.state = Candidate
-		DPrintf("Follower %d: Election Timeout", rf.me)
+		DPrintf("Term %d, Follower %d: Election Timeout", rf.currentTerm, rf.me)
 	}
 }
 
@@ -339,9 +360,9 @@ func (rf *Raft) workAsCandidate() {
 
 	select {
 	case <-rf.leaderCh:
-		DPrintf("Candidate %d: Empty the leaderCh", rf.me)
+		DPrintf("Term %d, Candidate %d: Empty the leaderCh", rf.currentTerm, rf.me)
 	case <-rf.heartbeatCh:
-		DPrintf("Candidate %d: There is already a leader", rf.me)
+		DPrintf("Term %d, Candidate %d: There is already a leader", rf.currentTerm, rf.me)
 		rf.state = Follower
 		return
 	default:
@@ -353,7 +374,15 @@ func (rf *Raft) workAsCandidate() {
 	case isLeader := <-rf.leaderCh:
 		if isLeader {
 			rf.state = Leader
-			DPrintf("Candidate %d: Become the leader", rf.me)
+			DPrintf("Term %d, Candidate %d: Become the leader", rf.currentTerm, rf.me)
+			for i := 0; i < len(rf.peers); i++ {
+				rf.nextIndex[i] = len(rf.logs) - 1
+			}
+			go rf.broadcastAppendEntries()
+		}
+	case <-time.After(500 * time.Millisecond):
+		if rf.state == Candidate {
+			go rf.broadcastRequestVote()
 		}
 	}
 }
@@ -368,13 +397,13 @@ func (rf *Raft) work() {
 	for {
 		switch rf.state {
 		case Follower:
-			DPrintf("Term %d: %d work as follower", rf.currentTerm, rf.me)
+			//DPrintf("Term %d: %d work as follower", rf.currentTerm, rf.me)
 			rf.workAsFollower()
 		case Candidate:
-			DPrintf("Term %d: %d work as candidate", rf.currentTerm, rf.me)
+			//DPrintf("Term %d: %d work as candidate", rf.currentTerm, rf.me)
 			rf.workAsCandidate()
 		case Leader:
-			DPrintf("Term %d: %d work as leader", rf.currentTerm, rf.me)
+			//DPrintf("Term %d: %d work as leader", rf.currentTerm, rf.me)
 			rf.workAsLeader()
 		}
 	}
@@ -407,6 +436,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.voteCount = 0
 	rf.lastApplied = 0
 	rf.commitIndex = 0
+	rf.nextIndex = make([]int, len(rf.peers))
+	rf.matchIndex = make([]int, len(rf.peers))
 
 	go rf.work()
 
