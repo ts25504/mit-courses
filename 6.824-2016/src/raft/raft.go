@@ -347,7 +347,7 @@ func (rf *Raft) workAsFollower() {
 	select {
 	case <-rf.heartbeatCh:
 		DPrintf("Term %d, Follower %d: Heartbeat", rf.currentTerm, rf.me)
-	case <-time.After(time.Duration(rand.Intn(300) + 800) * time.Millisecond):
+	case <-time.After(time.Duration(rand.Intn(150) + 150) * time.Millisecond):
 		rf.state = Candidate
 		DPrintf("Term %d, Follower %d: Election Timeout", rf.currentTerm, rf.me)
 	}
@@ -375,12 +375,9 @@ func (rf *Raft) workAsCandidate() {
 		if isLeader {
 			rf.state = Leader
 			DPrintf("Term %d, Candidate %d: Become the leader", rf.currentTerm, rf.me)
-			for i := 0; i < len(rf.peers); i++ {
-				rf.nextIndex[i] = len(rf.logs) - 1
-			}
 			go rf.broadcastAppendEntries()
 		}
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(300 * time.Millisecond):
 		if rf.state == Candidate {
 			go rf.broadcastRequestVote()
 		}
@@ -397,13 +394,10 @@ func (rf *Raft) work() {
 	for {
 		switch rf.state {
 		case Follower:
-			//DPrintf("Term %d: %d work as follower", rf.currentTerm, rf.me)
 			rf.workAsFollower()
 		case Candidate:
-			//DPrintf("Term %d: %d work as candidate", rf.currentTerm, rf.me)
 			rf.workAsCandidate()
 		case Leader:
-			//DPrintf("Term %d: %d work as leader", rf.currentTerm, rf.me)
 			rf.workAsLeader()
 		}
 	}
