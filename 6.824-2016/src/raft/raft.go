@@ -20,6 +20,8 @@ package raft
 import "sync"
 import "labrpc"
 
+import "time"
+import "math/rand"
 // import "bytes"
 // import "encoding/gob"
 
@@ -37,6 +39,11 @@ type ApplyMsg struct {
 	Snapshot    []byte // ignore for lab2; only used in lab3
 }
 
+const (
+	Follower = "Follower"
+	Candidate = "Candidate"
+	Leader = "Leader"
+)
 //
 // A Go object implementing a single Raft peer.
 //
@@ -49,7 +56,25 @@ type Raft struct {
 	// Your data here.
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
+	currentTerm   int
+	votedFor      int
+	logs          []*LogEntry
 
+	commitIndex   int
+	lastApplied   int
+
+	nextIndex     int
+	matchIndex    int
+
+	state         string
+	heartbeatCh   chan bool
+	leaderCh      chan bool
+	voteCount     int
+}
+
+type LogEntry struct {
+	term    int
+	command interface{}
 }
 
 // return currentTerm and whether this server
@@ -59,6 +84,9 @@ func (rf *Raft) GetState() (int, bool) {
 	var term int
 	var isleader bool
 	// Your code here.
+
+	term = rf.currentTerm
+	isleader = (rf.state == Leader)
 	return term, isleader
 }
 
@@ -90,14 +118,61 @@ func (rf *Raft) readPersist(data []byte) {
 	// d.Decode(&rf.yyy)
 }
 
+type AppendEntriesArgs struct {
+	Term         int
+	LeaderId     int
+	PrevLogIndex int
+	PrevLogTerm  int
+	Entries      []LogEntry
+	LeaderCommit int
+}
 
+type AppendEntriesReply struct {
+	Term    int
+	Success bool
+}
 
+func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply) {
+	rf.heartbeatCh <- true
+
+	if args.Term < rf.currentTerm {
+		reply.Term = rf.currentTerm
+		reply.Success = false
+		return
+	}
+
+	if rf.state == Candidate {
+		rf.state = Follower
+	}
+
+	if rf.state == Leader && args.Term > rf.currentTerm {
+		rf.state = Follower
+	}
+
+	rf.currentTerm = args.Term
+	reply.Success = true
+}
+
+func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *AppendEntriesReply) bool {
+	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
+	if ok {
+		if !reply.Success && rf.currentTerm < reply.Term {
+			rf.state = Follower
+			rf.leaderCh <- false
+		}
+	}
+	return ok
+}
 
 //
 // example RequestVote RPC arguments structure.
 //
 type RequestVoteArgs struct {
 	// Your data here.
+	Term         int
+	CandidateId  int
+	LastLogIndex int
+	LastLogTerm  int
 }
 
 //
@@ -105,6 +180,8 @@ type RequestVoteArgs struct {
 //
 type RequestVoteReply struct {
 	// Your data here.
+	Term        int
+	VoteGranted bool
 }
 
 //
@@ -112,6 +189,25 @@ type RequestVoteReply struct {
 //
 func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here.
+	if args.Term < rf.currentTerm {
+		reply.VoteGranted = false
+		reply.Term = rf.currentTerm
+		DPrintf("RequestVote Error: args.Term < rf.currentTerm")
+		return
+	}
+
+	if args.Term == rf.currentTerm {
+		if rf.votedFor != -1 && rf.votedFor != args.CandidateId {
+			reply.VoteGranted = false
+			DPrintf("RequestVote Error: votedFor != -1 && votedFor != CandidateId")
+			return
+		}
+	}
+
+	reply.VoteGranted = true
+	rf.votedFor = args.CandidateId
+	rf.currentTerm = args.Term
+	rf.state = Follower
 }
 
 //
@@ -133,6 +229,15 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 //
 func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *RequestVoteReply) bool {
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
+	if ok {
+		if reply.VoteGranted {
+			rf.voteCount++
+			if rf.voteCount > len(rf.peers) / 2 {
+				rf.state = Leader
+				rf.leaderCh <- true
+			}
+		}
+	}
 	return ok
 }
 
@@ -169,6 +274,93 @@ func (rf *Raft) Kill() {
 	// Your code here, if desired.
 }
 
+func (rf *Raft) workAsFollower() {
+	select {
+	case <-rf.heartbeatCh:
+		DPrintf("Follower %d: Heartbeat", rf.me)
+	case <-time.After(time.Duration(rand.Intn(300) + 800) * time.Millisecond):
+		rf.state = Candidate
+		DPrintf("Follower %d: Election Timeout", rf.me)
+	}
+}
+
+func (rf *Raft) workAsCandidate() {
+	rf.voteCount = 1
+	rf.votedFor = rf.me
+	rf.currentTerm++
+
+	select {
+	case <-rf.leaderCh:
+		DPrintf("Candidate %d: Empty the leaderCh", rf.me)
+	case <-rf.heartbeatCh:
+		DPrintf("Candidate %d: There is already a leader", rf.me)
+		rf.state = Follower
+		return
+	default:
+	}
+
+	go func() {
+		var args RequestVoteArgs
+		args.Term = rf.currentTerm
+		args.CandidateId = rf.me
+		for i := 0; i < len(rf.peers); i++ {
+			if i != rf.me {
+				var reply RequestVoteReply
+				DPrintf("Candidate %d: RequestVote to %d", rf.me, i)
+				rf.sendRequestVote(i, args, &reply)
+				if reply.Term > rf.currentTerm {
+					DPrintf("Candidate %d: There is already a leader", rf.me)
+					rf.state = Follower
+					break
+				}
+			}
+		}
+	}()
+
+	select {
+	case isLeader := <-rf.leaderCh:
+		if isLeader {
+			rf.state = Leader
+			DPrintf("Candidate %d: Become the leader", rf.me)
+		}
+	}
+}
+
+func (rf *Raft) workAsLeader() {
+	time.Sleep(10 * time.Millisecond)
+
+	go func() {
+		var args AppendEntriesArgs
+		args.Term = rf.currentTerm
+		args.LeaderId = rf.me
+		for i := 0; i < len(rf.peers); i++ {
+			if i != rf.me {
+				var reply AppendEntriesReply
+				rf.sendAppendEntries(i, args, &reply)
+				if rf.state != Leader {
+					break
+				}
+			}
+		}
+	}()
+}
+
+func (rf *Raft) work() {
+	for {
+		switch rf.state {
+		case Follower:
+			DPrintf("Term %d: %d work as follower", rf.currentTerm, rf.me)
+			rf.workAsFollower()
+		case Candidate:
+			DPrintf("Term %d: %d work as candidate", rf.currentTerm, rf.me)
+			rf.workAsCandidate()
+		case Leader:
+			DPrintf("Term %d: %d work as leader", rf.currentTerm, rf.me)
+			rf.workAsLeader()
+		}
+	}
+}
+
 //
 // the service or tester wants to create a Raft server. the ports
 // of all the Raft servers (including this one) are in peers[]. this
@@ -188,6 +380,14 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.me = me
 
 	// Your initialization code here.
+	rf.currentTerm = 0
+	rf.votedFor = -1
+	rf.state = Follower
+	rf.heartbeatCh = make(chan bool)
+	rf.leaderCh = make(chan bool)
+	rf.voteCount = 0
+
+	go rf.work()
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
