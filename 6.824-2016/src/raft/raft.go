@@ -58,13 +58,13 @@ type Raft struct {
 	// state a Raft server must maintain.
 	currentTerm   int
 	votedFor      int
-	logs          []*LogEntry
+	logs          []LogEntry
 
 	commitIndex   int
 	lastApplied   int
 
-	nextIndex     int
-	matchIndex    int
+	nextIndex     []int
+	matchIndex    []int
 
 	state         string
 	heartbeatCh   chan bool
@@ -134,9 +134,14 @@ type AppendEntriesReply struct {
 
 func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.heartbeatCh <- true
+	reply.Term = rf.currentTerm
 
 	if args.Term < rf.currentTerm {
-		reply.Term = rf.currentTerm
+		reply.Success = false
+		return
+	}
+
+	if args.Entries[args.PrevLogIndex].term != args.PrevLogTerm {
 		reply.Success = false
 		return
 	}
@@ -157,11 +162,31 @@ func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *App
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 	if ok {
 		if !reply.Success && rf.currentTerm < reply.Term {
+			rf.currentTerm = reply.Term
 			rf.state = Follower
 			rf.leaderCh <- false
 		}
 	}
 	return ok
+}
+
+func (rf *Raft) broadcastAppendEntries() {
+	for i := 0; i < len(rf.peers); i++ {
+		if i != rf.me {
+			var args AppendEntriesArgs
+			args.Term = rf.currentTerm
+			args.LeaderId = rf.me
+			args.Entries = rf.logs
+			args.LeaderCommit = rf.commitIndex
+
+			var reply AppendEntriesReply
+
+			rf.sendAppendEntries(i, args, &reply)
+			if rf.state != Leader {
+				break
+			}
+		}
+	}
 }
 
 //
@@ -241,6 +266,23 @@ func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *Request
 	return ok
 }
 
+func (rf *Raft) broadcastRequestVote() {
+	var args RequestVoteArgs
+	args.Term = rf.currentTerm
+	args.CandidateId = rf.me
+	for i := 0; i < len(rf.peers); i++ {
+		if i != rf.me {
+			var reply RequestVoteReply
+			DPrintf("Candidate %d: RequestVote to %d", rf.me, i)
+			rf.sendRequestVote(i, args, &reply)
+			if reply.Term > rf.currentTerm {
+				DPrintf("Candidate %d: There is already a leader", rf.me)
+				rf.state = Follower
+				break
+			}
+		}
+	}
+}
 
 //
 // the service using Raft (e.g. a k/v server) wants to start
@@ -256,10 +298,16 @@ func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *Request
 // the leader.
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	index := -1
-	term := -1
-	isLeader := true
+	index := rf.commitIndex
+	term := rf.currentTerm
+	isLeader := (rf.state == Leader)
 
+	if isLeader {
+		var log LogEntry
+		log.term = rf.currentTerm
+		log.command = command
+		rf.logs = append(rf.logs, log)
+	}
 
 	return index, term, isLeader
 }
@@ -299,23 +347,7 @@ func (rf *Raft) workAsCandidate() {
 	default:
 	}
 
-	go func() {
-		var args RequestVoteArgs
-		args.Term = rf.currentTerm
-		args.CandidateId = rf.me
-		for i := 0; i < len(rf.peers); i++ {
-			if i != rf.me {
-				var reply RequestVoteReply
-				DPrintf("Candidate %d: RequestVote to %d", rf.me, i)
-				rf.sendRequestVote(i, args, &reply)
-				if reply.Term > rf.currentTerm {
-					DPrintf("Candidate %d: There is already a leader", rf.me)
-					rf.state = Follower
-					break
-				}
-			}
-		}
-	}()
+	go rf.broadcastRequestVote()
 
 	select {
 	case isLeader := <-rf.leaderCh:
@@ -329,20 +361,7 @@ func (rf *Raft) workAsCandidate() {
 func (rf *Raft) workAsLeader() {
 	time.Sleep(10 * time.Millisecond)
 
-	go func() {
-		var args AppendEntriesArgs
-		args.Term = rf.currentTerm
-		args.LeaderId = rf.me
-		for i := 0; i < len(rf.peers); i++ {
-			if i != rf.me {
-				var reply AppendEntriesReply
-				rf.sendAppendEntries(i, args, &reply)
-				if rf.state != Leader {
-					break
-				}
-			}
-		}
-	}()
+	go rf.broadcastAppendEntries()
 }
 
 func (rf *Raft) work() {
@@ -386,6 +405,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.heartbeatCh = make(chan bool)
 	rf.leaderCh = make(chan bool)
 	rf.voteCount = 0
+	rf.lastApplied = 0
+	rf.commitIndex = 0
 
 	go rf.work()
 
