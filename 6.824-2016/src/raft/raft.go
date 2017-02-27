@@ -121,10 +121,12 @@ func (rf *Raft) readPersist(data []byte) {
 type AppendEntriesArgs struct {
 	Term         int
 	LeaderId     int
+	/*
 	PrevLogIndex int
 	PrevLogTerm  int
 	Entries      []LogEntry
 	LeaderCommit int
+	*/
 }
 
 type AppendEntriesReply struct {
@@ -141,10 +143,12 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		return
 	}
 
+	/*
 	if len(rf.logs) <= args.PrevLogIndex || rf.logs[args.PrevLogIndex].term != args.PrevLogTerm {
 		reply.Success = false
 		return
 	}
+	*/
 
 	if rf.state == Candidate {
 		rf.state = Follower
@@ -154,6 +158,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		rf.state = Follower
 	}
 
+	/*
 	rf.logs = rf.logs[:args.PrevLogIndex+1]
 	for i := 0; i < len(args.Entries); i++ {
 		rf.logs = append(rf.logs, args.Entries[i])
@@ -166,6 +171,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 			rf.commitIndex = len(rf.logs) - 1
 		}
 	}
+	*/
 
 	rf.currentTerm = args.Term
 	reply.Success = true
@@ -189,12 +195,14 @@ func (rf *Raft) broadcastAppendEntries() {
 			var args AppendEntriesArgs
 			args.Term = rf.currentTerm
 			args.LeaderId = rf.me
+			/*
 			if len(rf.logs) > 0 {
 				args.PrevLogIndex = rf.nextIndex[i]
 				args.PrevLogTerm = rf.logs[args.PrevLogIndex].term
 				args.Entries = rf.logs[args.PrevLogIndex+1:]
 				args.LeaderCommit = rf.commitIndex
 			}
+			*/
 
 			var reply AppendEntriesReply
 
@@ -272,6 +280,7 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *RequestVoteReply) bool {
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 	if ok {
+		rf.currentTerm = reply.Term
 		if reply.VoteGranted {
 			rf.voteCount++
 			if rf.voteCount > len(rf.peers) / 2 {
@@ -281,6 +290,7 @@ func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *Request
 		} else {
 			if reply.Term > rf.currentTerm {
 				rf.state = Follower
+				DPrintf("Term %d, Candidate %d: There is already a leader", rf.currentTerm, rf.me)
 			}
 		}
 	}
@@ -298,7 +308,6 @@ func (rf *Raft) broadcastRequestVote() {
 			DPrintf("Term %d, Candidate %d: RequestVote to %d", rf.currentTerm, rf.me, i)
 			rf.sendRequestVote(i, args, &reply)
 			if rf.state != Candidate {
-				DPrintf("Term %d, Candidate %d: There is already a leader", rf.currentTerm, rf.me)
 				break
 			}
 		}
@@ -378,8 +387,9 @@ func (rf *Raft) workAsCandidate() {
 			go rf.broadcastAppendEntries()
 		}
 	case <-time.After(300 * time.Millisecond):
-		if rf.state == Candidate {
-			go rf.broadcastRequestVote()
+		DPrintf("Term %d, Candidate %d: Election timeout", rf.currentTerm, rf.me)
+		if rf.state != Leader {
+			rf.state = Follower
 		}
 	}
 }
