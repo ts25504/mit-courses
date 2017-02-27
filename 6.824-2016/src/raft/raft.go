@@ -162,7 +162,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		return
 	}
 
-	rf.logs = rf.logs[:args.PrevLogIndex]
+	rf.logs = rf.logs[:args.PrevLogIndex+1]
 	for i := 0; i < len(args.Entries); i++ {
 		rf.logs = append(rf.logs, args.Entries[i])
 	}
@@ -223,7 +223,7 @@ func (rf *Raft) broadcastAppendEntries() {
 			args.LeaderId = rf.me
 			args.PrevLogIndex = rf.nextIndex[i] - 1
 			args.PrevLogTerm = rf.logs[args.PrevLogIndex].Term
-			args.Entries = rf.logs[args.PrevLogIndex:]
+			args.Entries = rf.logs[args.PrevLogIndex+1:]
 			args.LeaderCommit = rf.commitIndex
 
 			var reply AppendEntriesReply
@@ -381,7 +381,7 @@ func (rf *Raft) workAsFollower() {
 	select {
 	case <-rf.heartbeatCh:
 		// DPrintf("Term %d, Follower %d: Heartbeat", rf.currentTerm, rf.me)
-	case <-time.After(time.Duration(rand.Intn(150) + 150) * time.Millisecond):
+	case <-time.After(time.Duration(rand.Intn(150)+150) * time.Millisecond):
 		rf.state = CANDIDATE
 		DPrintf("Term %d, Follower %d: Election Timeout", rf.currentTerm, rf.me)
 	}
