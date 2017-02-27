@@ -73,8 +73,8 @@ type Raft struct {
 }
 
 type LogEntry struct {
-	term    int
-	command interface{}
+	Term    int
+	Command interface{}
 }
 
 // return currentTerm and whether this server
@@ -121,12 +121,10 @@ func (rf *Raft) readPersist(data []byte) {
 type AppendEntriesArgs struct {
 	Term         int
 	LeaderId     int
-	/*
 	PrevLogIndex int
 	PrevLogTerm  int
 	Entries      []LogEntry
 	LeaderCommit int
-	*/
 }
 
 type AppendEntriesReply struct {
@@ -195,14 +193,12 @@ func (rf *Raft) broadcastAppendEntries() {
 			var args AppendEntriesArgs
 			args.Term = rf.currentTerm
 			args.LeaderId = rf.me
-			/*
 			if len(rf.logs) > 0 {
 				args.PrevLogIndex = rf.nextIndex[i]
-				args.PrevLogTerm = rf.logs[args.PrevLogIndex].term
+				args.PrevLogTerm = rf.logs[args.PrevLogIndex].Term
 				args.Entries = rf.logs[args.PrevLogIndex+1:]
 				args.LeaderCommit = rf.commitIndex
 			}
-			*/
 
 			var reply AppendEntriesReply
 
@@ -334,8 +330,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
 	if isLeader {
 		var log LogEntry
-		log.term = rf.currentTerm
-		log.command = command
+		log.Term = rf.currentTerm
+		log.Command = command
 		rf.logs = append(rf.logs, log)
 	}
 
