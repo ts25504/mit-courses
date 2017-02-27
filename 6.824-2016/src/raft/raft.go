@@ -294,11 +294,11 @@ func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *Request
 }
 
 func (rf *Raft) broadcastRequestVote() {
-	var args RequestVoteArgs
-	args.Term = rf.currentTerm
-	args.CandidateId = rf.me
 	for i := 0; i < len(rf.peers); i++ {
 		if i != rf.me {
+			var args RequestVoteArgs
+			args.Term = rf.currentTerm
+			args.CandidateId = rf.me
 			var reply RequestVoteReply
 			reply.Term = rf.currentTerm
 			DPrintf("Term %d, Candidate %d: RequestVote to %d", rf.currentTerm, rf.me, i)
