@@ -271,7 +271,19 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 	}
 
 	if args.Term == rf.currentTerm {
-		if rf.votedFor != -1 && rf.votedFor != args.CandidateId {
+		upToDate := false
+		lastIndex := rf.getLastIndex()
+		lastTerm := rf.logs[rf.getLastIndex()].Term
+
+		if args.LastLogTerm > lastTerm {
+			upToDate = true
+		}
+
+		if args.LastLogTerm == lastTerm && args.LastLogIndex > lastIndex {
+			upToDate = true
+		}
+
+		if rf.votedFor != -1 && rf.votedFor != args.CandidateId || !upToDate{
 			reply.VoteGranted = false
 			DPrintf("RequestVote Error: votedFor != -1 && votedFor != CandidateId")
 			return
@@ -328,6 +340,8 @@ func (rf *Raft) broadcastRequestVote() {
 			var args RequestVoteArgs
 			args.Term = rf.currentTerm
 			args.CandidateId = rf.me
+			args.LastLogIndex = rf.getLastIndex()
+			args.LastLogTerm = rf.logs[args.LastLogIndex].Term
 			var reply RequestVoteReply
 			reply.Term = rf.currentTerm
 			DPrintf("Term %d, Candidate %d: RequestVote to %d", rf.currentTerm, rf.me, i)
