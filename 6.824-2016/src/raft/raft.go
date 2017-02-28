@@ -219,7 +219,7 @@ func (rf *Raft) broadcastAppendEntries() {
 	}
 
 	for i := 0; i < len(rf.peers); i++ {
-		if i != rf.me {
+		if i != rf.me && rf.state == LEADER {
 			var args AppendEntriesArgs
 			args.Term = rf.currentTerm
 			args.LeaderId = rf.me
@@ -230,10 +230,9 @@ func (rf *Raft) broadcastAppendEntries() {
 
 			var reply AppendEntriesReply
 
-			rf.sendAppendEntries(i, args, &reply)
-			if rf.state != LEADER {
-				break
-			}
+			go func(i int, args AppendEntriesArgs, reply AppendEntriesReply) {
+				rf.sendAppendEntries(i, args, &reply)
+			}(i, args, reply)
 		}
 	}
 }
@@ -335,20 +334,20 @@ func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *Request
 }
 
 func (rf *Raft) broadcastRequestVote() {
+	var args RequestVoteArgs
+	args.Term = rf.currentTerm
+	args.CandidateId = rf.me
+	args.LastLogIndex = rf.getLastIndex()
+	args.LastLogTerm = rf.logs[args.LastLogIndex].Term
+	var reply RequestVoteReply
+	reply.Term = rf.currentTerm
+
 	for i := 0; i < len(rf.peers); i++ {
-		if i != rf.me {
-			var args RequestVoteArgs
-			args.Term = rf.currentTerm
-			args.CandidateId = rf.me
-			args.LastLogIndex = rf.getLastIndex()
-			args.LastLogTerm = rf.logs[args.LastLogIndex].Term
-			var reply RequestVoteReply
-			reply.Term = rf.currentTerm
+		if i != rf.me && rf.state == CANDIDATE {
 			DPrintf("Term %d, Candidate %d: RequestVote to %d", rf.currentTerm, rf.me, i)
-			rf.sendRequestVote(i, args, &reply)
-			if rf.state != CANDIDATE {
-				break
-			}
+			go func(i int, args RequestVoteArgs, reply RequestVoteReply) {
+				rf.sendRequestVote(i, args, &reply)
+			}(i, args, reply)
 		}
 	}
 }
@@ -409,7 +408,7 @@ func (rf *Raft) workAsCandidate() {
 	rf.votedFor = rf.me
 	rf.currentTerm++
 
-	go rf.broadcastRequestVote()
+	rf.broadcastRequestVote()
 
 	select {
 	case isLeader := <-rf.leaderCh:
@@ -420,12 +419,12 @@ func (rf *Raft) workAsCandidate() {
 				rf.nextIndex[i] = rf.getLastIndex() + 1
 				rf.matchIndex[i] = 0
 			}
-			go rf.broadcastAppendEntries()
+			rf.broadcastAppendEntries()
 		}
 	case <-rf.heartbeatCh:
 		DPrintf("Term %d, Candidate %d: Become follower", rf.currentTerm, rf.me)
 		rf.state = FOLLOWER
-	case <-time.After(300 * time.Millisecond):
+	case <-time.After(time.Duration(rand.Intn(150)+150) * time.Millisecond):
 		DPrintf("Term %d, Candidate %d: Election timeout", rf.currentTerm, rf.me)
 		if rf.state != LEADER {
 			rf.state = FOLLOWER
@@ -436,7 +435,7 @@ func (rf *Raft) workAsCandidate() {
 func (rf *Raft) workAsLeader() {
 	time.Sleep(10 * time.Millisecond)
 
-	go rf.broadcastAppendEntries()
+	rf.broadcastAppendEntries()
 }
 
 func (rf *Raft) work() {
