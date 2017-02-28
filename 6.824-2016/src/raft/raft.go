@@ -184,14 +184,13 @@ func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *App
 	if ok {
 		if reply.Success {
 			if len(args.Entries) > 0 {
-				rf.nextIndex[server] = args.PrevLogIndex + len(args.Entries) + 1
+				rf.nextIndex[server] = args.Entries[len(args.Entries)-1].Index + 1
 				rf.matchIndex[server] = rf.nextIndex[server] - 1
 			}
 		} else {
 			if rf.currentTerm < reply.Term {
 				rf.currentTerm = reply.Term
 				rf.state = FOLLOWER
-				rf.leaderCh <- false
 			} else {
 				if rf.nextIndex[server] > 1 {
 					rf.nextIndex[server]--
@@ -393,16 +392,6 @@ func (rf *Raft) workAsCandidate() {
 	rf.voteCount = 1
 	rf.votedFor = rf.me
 	rf.currentTerm++
-
-	select {
-	case <-rf.leaderCh:
-		DPrintf("Term %d, Candidate %d: Empty the leaderCh", rf.currentTerm, rf.me)
-	case <-rf.heartbeatCh:
-		DPrintf("Term %d, Candidate %d: There is already a leader", rf.currentTerm, rf.me)
-		rf.state = FOLLOWER
-		return
-	default:
-	}
 
 	go rf.broadcastRequestVote()
 
