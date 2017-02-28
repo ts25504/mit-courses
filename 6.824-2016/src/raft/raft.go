@@ -139,9 +139,6 @@ type AppendEntriesReply struct {
 }
 
 func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
 	rf.heartbeatCh <- true
 	reply.Term = rf.currentTerm
 
@@ -185,9 +182,6 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *AppendEntriesReply) bool {
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
 	if ok {
 		if reply.Success {
 			if len(args.Entries) > 0 {
@@ -209,8 +203,6 @@ func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *App
 }
 
 func (rf *Raft) broadcastAppendEntries() {
-	rf.mu.Lock()
-
 	for n := rf.commitIndex+1; n <= rf.getLastIndex(); n++ {
 		count := 1
 		for i := 0; i < len(rf.peers); i++ {
@@ -226,11 +218,8 @@ func (rf *Raft) broadcastAppendEntries() {
 		}
 	}
 
-	rf.mu.Unlock()
-
 	for i := 0; i < len(rf.peers); i++ {
 		if i != rf.me {
-			rf.mu.Lock()
 			var args AppendEntriesArgs
 			args.Term = rf.currentTerm
 			args.LeaderId = rf.me
@@ -240,14 +229,11 @@ func (rf *Raft) broadcastAppendEntries() {
 			args.LeaderCommit = rf.commitIndex
 
 			var reply AppendEntriesReply
-			rf.mu.Unlock()
 
 			rf.sendAppendEntries(i, args, &reply)
-			rf.mu.Lock()
 			if rf.state != LEADER {
 				break
 			}
-			rf.mu.Unlock()
 		}
 	}
 }
@@ -277,9 +263,6 @@ type RequestVoteReply struct {
 //
 func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here.
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
 	if args.Term < rf.currentTerm {
 		reply.VoteGranted = false
 		reply.Term = rf.currentTerm
@@ -321,9 +304,6 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *RequestVoteReply) bool {
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
 	if ok {
 		rf.currentTerm = reply.Term
 		if reply.VoteGranted {
@@ -345,20 +325,16 @@ func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *Request
 func (rf *Raft) broadcastRequestVote() {
 	for i := 0; i < len(rf.peers); i++ {
 		if i != rf.me {
-			rf.mu.Lock()
 			var args RequestVoteArgs
 			args.Term = rf.currentTerm
 			args.CandidateId = rf.me
 			var reply RequestVoteReply
 			reply.Term = rf.currentTerm
 			DPrintf("Term %d, Candidate %d: RequestVote to %d", rf.currentTerm, rf.me, i)
-			rf.mu.Unlock()
 			rf.sendRequestVote(i, args, &reply)
-			rf.mu.Lock()
 			if rf.state != CANDIDATE {
 				break
 			}
-			rf.mu.Unlock()
 		}
 	}
 }
@@ -377,9 +353,6 @@ func (rf *Raft) broadcastRequestVote() {
 // the leader.
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
 	index := rf.commitIndex
 	term := rf.currentTerm
 	isLeader := (rf.state == LEADER)
@@ -418,29 +391,23 @@ func (rf *Raft) workAsFollower() {
 }
 
 func (rf *Raft) workAsCandidate() {
-	rf.mu.Lock()
 	rf.voteCount = 1
 	rf.votedFor = rf.me
 	rf.currentTerm++
-	rf.mu.Unlock()
 
 	go rf.broadcastRequestVote()
 
 	select {
 	case isLeader := <-rf.leaderCh:
-
 		if isLeader {
-			rf.mu.Lock()
 			rf.state = LEADER
 			DPrintf("Term %d, Candidate %d: Become the leader", rf.currentTerm, rf.me)
 			for i := 0; i < len(rf.peers); i++ {
 				rf.nextIndex[i] = rf.getLastIndex() + 1
 				rf.matchIndex[i] = 0
 			}
-			rf.mu.Unlock()
 			go rf.broadcastAppendEntries()
 		}
-
 	case <-rf.heartbeatCh:
 		DPrintf("Term %d, Candidate %d: Become follower", rf.currentTerm, rf.me)
 		rf.state = FOLLOWER
@@ -475,8 +442,6 @@ func (rf *Raft) commit(applyCh chan ApplyMsg) {
 	for {
 		select {
 		case <-rf.commitCh:
-			rf.mu.Lock()
-
 			for i := rf.lastApplied+1; i <= rf.commitIndex; i++ {
 				var msg ApplyMsg
 				msg.Index = i
@@ -485,8 +450,6 @@ func (rf *Raft) commit(applyCh chan ApplyMsg) {
 				applyCh <- msg
 				rf.lastApplied = i
 			}
-
-			rf.mu.Unlock()
 		}
 	}
 }
