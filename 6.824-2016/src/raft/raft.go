@@ -140,24 +140,21 @@ type AppendEntriesReply struct {
 
 func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.heartbeatCh <- true
-	reply.Term = rf.currentTerm
 
 	if args.Term < rf.currentTerm {
+		reply.Term = rf.currentTerm
 		reply.Success = false
 		return
 	}
 
-	rf.currentTerm = args.Term
-
-	if rf.state == CANDIDATE {
+	if args.Term > rf.currentTerm {
+		rf.currentTerm = args.Term
 		rf.state = FOLLOWER
-	}
-
-	if rf.state == LEADER && args.Term > rf.currentTerm {
-		rf.state = FOLLOWER
+		rf.votedFor = -1
 	}
 
 	if len(rf.logs) <= args.PrevLogIndex || rf.logs[args.PrevLogIndex].Term != args.PrevLogTerm {
+		reply.Term = rf.currentTerm
 		reply.Success = false
 		return
 	}
@@ -176,13 +173,14 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		rf.commitCh <- true
 	}
 
+	reply.Term = rf.currentTerm
 	reply.Success = true
 }
 
 func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *AppendEntriesReply) bool {
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 
-	if ok {
+	if ok && rf.state == LEADER {
 		if reply.Success {
 			if len(args.Entries) > 0 {
 				rf.nextIndex[server] = args.Entries[len(args.Entries)-1].Index + 1
@@ -192,6 +190,7 @@ func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *App
 			if rf.currentTerm < reply.Term {
 				rf.currentTerm = reply.Term
 				rf.state = FOLLOWER
+				rf.votedFor = -1
 			} else {
 				if rf.nextIndex[server] > 1 {
 					rf.nextIndex[server]--
@@ -269,30 +268,33 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 		return
 	}
 
-	if args.Term == rf.currentTerm {
-		upToDate := false
-		lastIndex := rf.getLastIndex()
-		lastTerm := rf.logs[rf.getLastIndex()].Term
-
-		if args.LastLogTerm > lastTerm {
-			upToDate = true
-		}
-
-		if args.LastLogTerm == lastTerm && args.LastLogIndex > lastIndex {
-			upToDate = true
-		}
-
-		if rf.votedFor != -1 && rf.votedFor != args.CandidateId || !upToDate{
-			reply.VoteGranted = false
-			DPrintf("RequestVote Error: votedFor != -1 && votedFor != CandidateId")
-			return
-		}
+	if args.Term > rf.currentTerm {
+		rf.currentTerm = args.Term
+		rf.state = FOLLOWER
+		rf.votedFor = -1
 	}
 
-	reply.VoteGranted = true
-	rf.votedFor = args.CandidateId
-	rf.currentTerm = args.Term
-	rf.state = FOLLOWER
+	upToDate := false
+	lastIndex := rf.getLastIndex()
+	lastTerm := rf.logs[rf.getLastIndex()].Term
+
+	if args.LastLogTerm > lastTerm {
+		upToDate = true
+	}
+
+	if args.LastLogTerm == lastTerm && args.LastLogIndex >= lastIndex {
+		upToDate = true
+	}
+
+	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) && upToDate {
+		rf.votedFor = args.CandidateId
+		reply.VoteGranted = true
+		reply.Term = rf.currentTerm
+	} else {
+		reply.VoteGranted = false
+		reply.Term = rf.currentTerm
+		DPrintf("RequestVote Error: votedFor != -1 && votedFor != CandidateId")
+	}
 }
 
 //
@@ -315,8 +317,7 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *RequestVoteReply) bool {
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 
-	if ok {
-		rf.currentTerm = reply.Term
+	if ok && rf.state == CANDIDATE {
 		if reply.VoteGranted {
 			rf.voteCount++
 			if rf.voteCount > len(rf.peers) / 2 {
@@ -326,6 +327,8 @@ func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *Request
 		} else {
 			if reply.Term > rf.currentTerm {
 				rf.state = FOLLOWER
+				rf.currentTerm = reply.Term
+				rf.votedFor = -1
 				DPrintf("Term %d, Candidate %d: There is already a leader", rf.currentTerm, rf.me)
 			}
 		}
@@ -340,7 +343,6 @@ func (rf *Raft) broadcastRequestVote() {
 	args.LastLogIndex = rf.getLastIndex()
 	args.LastLogTerm = rf.logs[args.LastLogIndex].Term
 	var reply RequestVoteReply
-	reply.Term = rf.currentTerm
 
 	for i := 0; i < len(rf.peers); i++ {
 		if i != rf.me && rf.state == CANDIDATE {
