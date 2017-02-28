@@ -406,6 +406,9 @@ func (rf *Raft) workAsCandidate() {
 			}
 			go rf.broadcastAppendEntries()
 		}
+	case <-rf.heartbeatCh:
+		DPrintf("Term %d, Candidate %d: Become follower", rf.currentTerm, rf.me)
+		rf.state = FOLLOWER
 	case <-time.After(300 * time.Millisecond):
 		DPrintf("Term %d, Candidate %d: Election timeout", rf.currentTerm, rf.me)
 		if rf.state != LEADER {
