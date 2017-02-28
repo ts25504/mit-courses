@@ -428,9 +428,6 @@ func (rf *Raft) workAsCandidate() {
 		rf.state = FOLLOWER
 	case <-time.After(time.Duration(rand.Intn(150)+150) * time.Millisecond):
 		DPrintf("Term %d, Candidate %d: Election timeout", rf.currentTerm, rf.me)
-		if rf.state != LEADER {
-			rf.state = FOLLOWER
-		}
 	}
 }
 
