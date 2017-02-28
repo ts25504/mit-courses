@@ -243,9 +243,11 @@ func (rf *Raft) broadcastAppendEntries() {
 			rf.mu.Unlock()
 
 			rf.sendAppendEntries(i, args, &reply)
+			rf.mu.Lock()
 			if rf.state != LEADER {
 				break
 			}
+			rf.mu.Unlock()
 		}
 	}
 }
@@ -352,9 +354,11 @@ func (rf *Raft) broadcastRequestVote() {
 			DPrintf("Term %d, Candidate %d: RequestVote to %d", rf.currentTerm, rf.me, i)
 			rf.mu.Unlock()
 			rf.sendRequestVote(i, args, &reply)
+			rf.mu.Lock()
 			if rf.state != CANDIDATE {
 				break
 			}
+			rf.mu.Unlock()
 		}
 	}
 }
@@ -424,19 +428,19 @@ func (rf *Raft) workAsCandidate() {
 
 	select {
 	case isLeader := <-rf.leaderCh:
-		rf.mu.Lock()
 
 		if isLeader {
+			rf.mu.Lock()
 			rf.state = LEADER
 			DPrintf("Term %d, Candidate %d: Become the leader", rf.currentTerm, rf.me)
 			for i := 0; i < len(rf.peers); i++ {
 				rf.nextIndex[i] = rf.getLastIndex() + 1
 				rf.matchIndex[i] = 0
 			}
+			rf.mu.Unlock()
 			go rf.broadcastAppendEntries()
 		}
 
-		rf.mu.Unlock()
 	case <-rf.heartbeatCh:
 		DPrintf("Term %d, Candidate %d: Become follower", rf.currentTerm, rf.me)
 		rf.state = FOLLOWER
