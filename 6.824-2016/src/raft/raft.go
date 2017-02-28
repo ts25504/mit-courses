@@ -173,6 +173,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		} else {
 			rf.commitIndex = rf.getLastIndex()
 		}
+		rf.commitCh <- true
 	}
 
 	reply.Success = true
@@ -183,17 +184,18 @@ func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *App
 	if ok {
 		if reply.Success {
 			if len(args.Entries) > 0 {
-				rf.nextIndex[server] = args.PrevLogIndex + len(args.Entries)
+				rf.nextIndex[server] = args.PrevLogIndex + len(args.Entries) + 1
 				rf.matchIndex[server] = rf.nextIndex[server] - 1
 			}
 		} else {
-			if rf.nextIndex[server] > 1 {
-				rf.nextIndex[server]--
-			}
 			if rf.currentTerm < reply.Term {
 				rf.currentTerm = reply.Term
 				rf.state = FOLLOWER
 				rf.leaderCh <- false
+			} else {
+				if rf.nextIndex[server] > 1 {
+					rf.nextIndex[server]--
+				}
 			}
 		}
 	}
@@ -201,10 +203,10 @@ func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *App
 }
 
 func (rf *Raft) broadcastAppendEntries() {
-	for n := rf.commitIndex + 1; n < rf.getLastIndex(); n++ {
-		count := 0
+	for n := rf.commitIndex+1; n <= rf.getLastIndex(); n++ {
+		count := 1
 		for i := 0; i < len(rf.peers); i++ {
-			if rf.matchIndex[i] > n && rf.logs[n].Term == rf.currentTerm {
+			if rf.matchIndex[i] >= n && rf.logs[n].Term == rf.currentTerm {
 				count++
 			}
 		}
@@ -359,7 +361,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		log.Term = rf.currentTerm
 		log.Command = command
 		log.Index = rf.getLastIndex() + 1
-		DPrintf("Start log Term %d Index %d", log.Term, log.Index)
+		DPrintf("Start log Term %d Index %d Command %v", log.Term, log.Index, log.Command)
 		rf.logs = append(rf.logs, log)
 		index = log.Index
 	}
@@ -450,7 +452,7 @@ func (rf *Raft) commit(applyCh chan ApplyMsg) {
 				var msg ApplyMsg
 				msg.Index = i
 				msg.Command = rf.logs[i].Command
-				DPrintf("Commit log Term %d Index %d", rf.logs[i].Term, msg.Index)
+				DPrintf("Commit log Term %d Index %d Command %v", rf.logs[i].Term, msg.Index, msg.Command)
 				applyCh <- msg
 				rf.lastApplied = i
 			}
