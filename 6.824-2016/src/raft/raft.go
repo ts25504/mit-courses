@@ -22,8 +22,8 @@ import "labrpc"
 
 import "time"
 import "math/rand"
-// import "bytes"
-// import "encoding/gob"
+import "bytes"
+import "encoding/gob"
 
 
 
@@ -104,12 +104,13 @@ func (rf *Raft) GetState() (int, bool) {
 func (rf *Raft) persist() {
 	// Your code here.
 	// Example:
-	// w := new(bytes.Buffer)
-	// e := gob.NewEncoder(w)
-	// e.Encode(rf.xxx)
-	// e.Encode(rf.yyy)
-	// data := w.Bytes()
-	// rf.persister.SaveRaftState(data)
+	w := new(bytes.Buffer)
+	e := gob.NewEncoder(w)
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.votedFor)
+	e.Encode(rf.logs)
+	data := w.Bytes()
+	rf.persister.SaveRaftState(data)
 }
 
 //
@@ -118,10 +119,11 @@ func (rf *Raft) persist() {
 func (rf *Raft) readPersist(data []byte) {
 	// Your code here.
 	// Example:
-	// r := bytes.NewBuffer(data)
-	// d := gob.NewDecoder(r)
-	// d.Decode(&rf.xxx)
-	// d.Decode(&rf.yyy)
+	r := bytes.NewBuffer(data)
+	d := gob.NewDecoder(r)
+	d.Decode(&rf.currentTerm)
+	d.Decode(&rf.votedFor)
+	d.Decode(&rf.logs)
 }
 
 type AppendEntriesArgs struct {
@@ -139,6 +141,7 @@ type AppendEntriesReply struct {
 }
 
 func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply) {
+	defer rf.persist()
 	rf.heartbeatCh <- true
 
 	if args.Term < rf.currentTerm {
@@ -191,6 +194,7 @@ func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *App
 				rf.currentTerm = reply.Term
 				rf.state = FOLLOWER
 				rf.votedFor = -1
+				rf.persist()
 			} else {
 				if rf.nextIndex[server] > 1 {
 					rf.nextIndex[server]--
@@ -205,7 +209,7 @@ func (rf *Raft) broadcastAppendEntries() {
 	for n := rf.commitIndex+1; n <= rf.getLastIndex(); n++ {
 		count := 1
 		for i := 0; i < len(rf.peers); i++ {
-			if rf.matchIndex[i] >= n && rf.logs[n].Term == rf.currentTerm {
+			if rf.me != i && rf.matchIndex[i] >= n && rf.logs[n].Term == rf.currentTerm {
 				count++
 			}
 		}
@@ -262,7 +266,7 @@ type RequestVoteReply struct {
 // example RequestVote RPC handler.
 //
 func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
-	// Your code here.
+	defer rf.persist()
 	if args.Term < rf.currentTerm {
 		reply.VoteGranted = false
 		reply.Term = rf.currentTerm
@@ -331,6 +335,7 @@ func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *Request
 				rf.state = FOLLOWER
 				rf.currentTerm = reply.Term
 				rf.votedFor = -1
+				rf.persist()
 				DPrintf("Term %d, Candidate %d: There is already a leader", rf.currentTerm, rf.me)
 			}
 		}
@@ -384,6 +389,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		log.Index = rf.getLastIndex() + 1
 		DPrintf("Start log Term %d Index %d Command %v", log.Term, log.Index, log.Command)
 		rf.logs = append(rf.logs, log)
+		rf.persist()
 		index = log.Index
 	}
 
@@ -414,6 +420,7 @@ func (rf *Raft) workAsCandidate() {
 	rf.voteCount = 1
 	rf.votedFor = rf.me
 	rf.currentTerm++
+	rf.persist()
 
 	rf.broadcastRequestVote()
 
