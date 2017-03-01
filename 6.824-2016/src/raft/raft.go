@@ -219,6 +219,7 @@ func (rf *Raft) broadcastAppendEntries() {
 
 	for i := 0; i < len(rf.peers); i++ {
 		if i != rf.me && rf.state == LEADER {
+			rf.mu.Lock()
 			var args AppendEntriesArgs
 			args.Term = rf.currentTerm
 			args.LeaderId = rf.me
@@ -228,6 +229,7 @@ func (rf *Raft) broadcastAppendEntries() {
 			args.LeaderCommit = rf.commitIndex
 
 			var reply AppendEntriesReply
+			rf.mu.Unlock()
 
 			go func(i int, args AppendEntriesArgs, reply AppendEntriesReply) {
 				rf.sendAppendEntries(i, args, &reply)
@@ -368,6 +370,9 @@ func (rf *Raft) broadcastRequestVote() {
 // the leader.
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
 	index := rf.commitIndex
 	term := rf.currentTerm
 	isLeader := (rf.state == LEADER)
@@ -432,7 +437,7 @@ func (rf *Raft) workAsCandidate() {
 }
 
 func (rf *Raft) workAsLeader() {
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 
 	rf.broadcastAppendEntries()
 }
@@ -489,9 +494,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.votedFor = -1
 	rf.logs = append(rf.logs, LogEntry{})
 	rf.state = FOLLOWER
-	rf.heartbeatCh = make(chan bool)
-	rf.leaderCh = make(chan bool)
-	rf.commitCh = make(chan bool)
+	rf.heartbeatCh = make(chan bool, 10)
+	rf.leaderCh = make(chan bool, 10)
+	rf.commitCh = make(chan bool, 10)
 	rf.voteCount = 0
 	rf.lastApplied = 0
 	rf.commitIndex = 0
