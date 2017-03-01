@@ -83,6 +83,13 @@ func (rf *Raft) getLastIndex() int {
 	return rf.logs[len(rf.logs)-1].Index
 }
 
+func (rf *Raft) convertToFollower(term int) {
+	rf.currentTerm = term
+	rf.state = FOLLOWER
+	rf.votedFor = -1
+	rf.persist()
+}
+
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
@@ -141,6 +148,17 @@ type AppendEntriesReply struct {
 	NextIndex int
 }
 
+func (rf *Raft) decreaseNextIndex(prevLogIndex int) int {
+	nextIndex := 1
+	for i := prevLogIndex - 1; i >= 0; i-- {
+		if rf.logs[i].Term != rf.logs[prevLogIndex].Term {
+			nextIndex = i + 1
+			break
+		}
+	}
+	return nextIndex
+}
+
 func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
@@ -155,9 +173,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 	}
 
 	if args.Term > rf.currentTerm {
-		rf.currentTerm = args.Term
-		rf.state = FOLLOWER
-		rf.votedFor = -1
+		rf.convertToFollower(args.Term)
 	}
 
 	if len(rf.logs) <= args.PrevLogIndex {
@@ -168,14 +184,9 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 	}
 
 	if rf.logs[args.PrevLogIndex].Term != args.PrevLogTerm {
-		for i := args.PrevLogIndex - 1; i >= 0; i-- {
-			if rf.logs[i].Term != rf.logs[args.PrevLogIndex].Term {
-				reply.NextIndex = i + 1
-				break
-			}
-		}
 		reply.Term = rf.currentTerm
 		reply.Success = false
+		reply.NextIndex = rf.decreaseNextIndex(args.PrevLogIndex)
 		return
 	}
 
@@ -212,10 +223,7 @@ func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *App
 			}
 		} else {
 			if rf.currentTerm < reply.Term {
-				rf.currentTerm = reply.Term
-				rf.state = FOLLOWER
-				rf.votedFor = -1
-				rf.persist()
+				rf.convertToFollower(reply.Term)
 			} else {
 				if reply.NextIndex > 0 {
 					rf.nextIndex[server] = reply.NextIndex
@@ -228,7 +236,7 @@ func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *App
 	return ok
 }
 
-func (rf *Raft) broadcastAppendEntries() {
+func (rf *Raft) commitLogs() {
 	for n := rf.commitIndex+1; n <= rf.getLastIndex(); n++ {
 		count := 1
 		for i := 0; i < len(rf.peers); i++ {
@@ -243,6 +251,10 @@ func (rf *Raft) broadcastAppendEntries() {
 			break
 		}
 	}
+}
+
+func (rf *Raft) broadcastAppendEntries() {
+	rf.commitLogs()
 
 	for i := 0; i < len(rf.peers); i++ {
 		if i != rf.me && rf.state == LEADER {
@@ -283,6 +295,22 @@ type RequestVoteReply struct {
 	VoteGranted bool
 }
 
+func (rf *Raft) checkLogUpToDate(candidateLastTerm int, candidateLastIndex int) bool {
+	upToDate := false
+	lastIndex := rf.getLastIndex()
+	lastTerm := rf.logs[rf.getLastIndex()].Term
+
+	if candidateLastTerm > lastTerm {
+		upToDate = true
+	}
+
+	if candidateLastTerm == lastTerm && candidateLastIndex >= lastIndex {
+		upToDate = true
+	}
+
+	return upToDate
+}
+
 //
 // example RequestVote RPC handler.
 //
@@ -298,22 +326,10 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 	}
 
 	if args.Term > rf.currentTerm {
-		rf.currentTerm = args.Term
-		rf.state = FOLLOWER
-		rf.votedFor = -1
+		rf.convertToFollower(args.Term)
 	}
 
-	upToDate := false
-	lastIndex := rf.getLastIndex()
-	lastTerm := rf.logs[rf.getLastIndex()].Term
-
-	if args.LastLogTerm > lastTerm {
-		upToDate = true
-	}
-
-	if args.LastLogTerm == lastTerm && args.LastLogIndex >= lastIndex {
-		upToDate = true
-	}
+	upToDate := rf.checkLogUpToDate(args.LastLogTerm, args.LastLogIndex)
 
 	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) && upToDate {
 		rf.votedFor = args.CandidateId
@@ -358,10 +374,7 @@ func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *Request
 			}
 		} else {
 			if reply.Term > rf.currentTerm {
-				rf.state = FOLLOWER
-				rf.currentTerm = reply.Term
-				rf.votedFor = -1
-				rf.persist()
+				rf.convertToFollower(reply.Term)
 				DPrintf("Term %d, Candidate %d: There is already a leader", rf.currentTerm, rf.me)
 			}
 		}
@@ -442,13 +455,18 @@ func (rf *Raft) workAsFollower() {
 	}
 }
 
-func (rf *Raft) workAsCandidate() {
+func (rf *Raft) startElection() {
 	rf.voteCount = 1
 	rf.votedFor = rf.me
 	rf.currentTerm++
 	rf.persist()
 
 	rf.broadcastRequestVote()
+
+}
+
+func (rf *Raft) workAsCandidate() {
+	rf.startElection()
 
 	select {
 	case isLeader := <-rf.leaderCh:
@@ -488,7 +506,7 @@ func (rf *Raft) work() {
 	}
 }
 
-func (rf *Raft) commit(applyCh chan ApplyMsg) {
+func (rf *Raft) apply(applyCh chan ApplyMsg) {
 	for {
 		select {
 		case <-rf.commitCh:
@@ -537,7 +555,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.matchIndex = make([]int, len(rf.peers))
 
 	go rf.work()
-	go rf.commit(applyCh)
+	go rf.apply(applyCh)
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
