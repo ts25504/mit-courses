@@ -136,17 +136,21 @@ type AppendEntriesArgs struct {
 }
 
 type AppendEntriesReply struct {
-	Term    int
-	Success bool
+	Term      int
+	Success   bool
+	NextIndex int
 }
 
 func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	defer rf.persist()
 	rf.heartbeatCh <- true
 
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
 		reply.Success = false
+		reply.NextIndex = rf.getLastIndex() + 1
 		return
 	}
 
@@ -156,7 +160,20 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		rf.votedFor = -1
 	}
 
-	if len(rf.logs) <= args.PrevLogIndex || rf.logs[args.PrevLogIndex].Term != args.PrevLogTerm {
+	if len(rf.logs) <= args.PrevLogIndex {
+		reply.Term = rf.currentTerm
+		reply.Success = false
+		reply.NextIndex = rf.getLastIndex() + 1
+		return
+	}
+
+	if rf.logs[args.PrevLogIndex].Term != args.PrevLogTerm {
+		for i := args.PrevLogIndex - 1; i >= 0; i-- {
+			if rf.logs[i].Term != rf.logs[args.PrevLogIndex].Term {
+				reply.NextIndex = i + 1
+				break
+			}
+		}
 		reply.Term = rf.currentTerm
 		reply.Success = false
 		return
@@ -176,12 +193,16 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		rf.commitCh <- true
 	}
 
+	reply.NextIndex = rf.getLastIndex() + 1
 	reply.Term = rf.currentTerm
 	reply.Success = true
 }
 
 func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *AppendEntriesReply) bool {
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
+
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 
 	if ok && rf.state == LEADER {
 		if reply.Success {
@@ -196,8 +217,10 @@ func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *App
 				rf.votedFor = -1
 				rf.persist()
 			} else {
-				if rf.nextIndex[server] > 1 {
-					rf.nextIndex[server]--
+				if reply.NextIndex > 0 {
+					rf.nextIndex[server] = reply.NextIndex
+				} else {
+					rf.nextIndex[server] = 1
 				}
 			}
 		}
@@ -264,6 +287,8 @@ type RequestVoteReply struct {
 // example RequestVote RPC handler.
 //
 func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	defer rf.persist()
 	if args.Term < rf.currentTerm {
 		reply.VoteGranted = false
@@ -320,6 +345,9 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 //
 func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *RequestVoteReply) bool {
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
+
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 
 	if ok && rf.state == CANDIDATE {
 		if reply.VoteGranted {
