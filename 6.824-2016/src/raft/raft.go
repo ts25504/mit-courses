@@ -223,7 +223,6 @@ func (rf *Raft) broadcastAppendEntries() {
 
 	for i := 0; i < len(rf.peers); i++ {
 		if i != rf.me && rf.state == LEADER {
-			rf.mu.Lock()
 			var args AppendEntriesArgs
 			args.Term = rf.currentTerm
 			args.LeaderId = rf.me
@@ -233,7 +232,6 @@ func (rf *Raft) broadcastAppendEntries() {
 			args.LeaderCommit = rf.commitIndex
 
 			var reply AppendEntriesReply
-			rf.mu.Unlock()
 
 			go func(i int, args AppendEntriesArgs, reply AppendEntriesReply) {
 				rf.sendAppendEntries(i, args, &reply)
