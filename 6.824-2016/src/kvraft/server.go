@@ -22,6 +22,9 @@ type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
+	Op    string
+	Key   string
+	Value string
 }
 
 type RaftKV struct {
@@ -33,15 +36,97 @@ type RaftKV struct {
 	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
+	database map[string]string
+	result map[int]chan Op
 }
-
 
 func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
+	var op Op
+	op.Op = GET
+	op.Key = args.Key
+
+	index, _, isLeader := kv.rf.Start(op)
+	reply.WrongLeader = !isLeader
+	if !isLeader {
+		return
+	}
+
+	ok := kv.checkOpCommitted(index, op)
+	if ok {
+		v, ok := kv.database[args.Key]
+		if ok {
+			reply.Value = v
+			reply.Err = OK
+		} else {
+			reply.Err = ErrNoKey
+		}
+	}
 }
 
 func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
+	var op Op
+	op.Op = args.Op
+	op.Key = args.Key
+	op.Value = args.Value
+
+	index, _, isLeader := kv.rf.Start(op)
+	reply.WrongLeader = !isLeader
+	if !isLeader {
+		return
+	}
+
+	ok := kv.checkOpCommitted(index, op)
+	if ok {
+		reply.WrongLeader = false
+		reply.Err = OK
+	} else {
+		reply.WrongLeader = true
+	}
+}
+
+func (kv *RaftKV) checkOpCommitted(index int, op Op) bool {
+	ch, ok := kv.result[index]
+	if !ok {
+		ch = make(chan Op)
+		kv.result[index] = ch
+	}
+
+	o := <-ch
+	committed := o == op
+	if committed {
+		DPrintf("kvraft: Commit %d %v", index, op)
+	}
+	return committed
+}
+
+func (kv *RaftKV) excute(op Op) {
+	if op.Op == PUT {
+		kv.database[op.Key] = op.Value
+	} else if op.Op == APPEND {
+		v, ok := kv.database[op.Key]
+		if ok {
+			kv.database[op.Key] = v + op.Value
+		} else {
+			kv.database[op.Key] = op.Value
+		}
+	}
+}
+
+func (kv *RaftKV) apply() {
+	for {
+		msg:= <-kv.applyCh
+		op := msg.Command.(Op)
+		index := msg.Index
+		kv.excute(op)
+		ch, ok := kv.result[index]
+		if ok {
+			ch <- op
+		} else {
+			kv.result[index] = make(chan Op)
+		}
+	}
 }
 
 //
@@ -81,7 +166,10 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
+	kv.result = make(map[int]chan Op)
+	kv.database = make(map[string]string)
 
+	go kv.apply()
 
 	return kv
 }
