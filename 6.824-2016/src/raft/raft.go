@@ -321,7 +321,7 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 	if args.Term < rf.currentTerm {
 		reply.VoteGranted = false
 		reply.Term = rf.currentTerm
-		DPrintf("RequestVote Error: args.Term < rf.currentTerm")
+		DPrintf("Term %d, Follower %d: RequestVote Error: args.Term < rf.currentTerm", rf.currentTerm, rf.me)
 		return
 	}
 
@@ -338,7 +338,7 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 	} else {
 		reply.VoteGranted = false
 		reply.Term = rf.currentTerm
-		DPrintf("RequestVote Error: votedFor != -1 && votedFor != CandidateId")
+		DPrintf("Term %d, Follower %d: RequestVote Error: votedFor != -1 && votedFor != CandidateId || !upToDate, votedFor=%d", rf.currentTerm, rf.me, rf.votedFor)
 	}
 }
 
