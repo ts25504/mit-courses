@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const Debug = 0
+const Debug = 1
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -60,6 +60,7 @@ func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) {
 
 	ok := kv.checkOpCommitted(index, op)
 	if ok {
+		reply.WrongLeader = false
 		v, ok := kv.database[args.Key]
 		if ok {
 			reply.Value = v
@@ -68,6 +69,8 @@ func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) {
 		} else {
 			reply.Err = ErrNoKey
 		}
+	} else {
+		reply.WrongLeader = true
 	}
 }
 
@@ -98,7 +101,7 @@ func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 func (kv *RaftKV) checkOpCommitted(index int, op Op) bool {
 	ch, ok := kv.result[index]
 	if !ok {
-		ch = make(chan Op)
+		ch = make(chan Op, 1)
 		kv.result[index] = ch
 	}
 
@@ -148,9 +151,13 @@ func (kv *RaftKV) apply() {
 		}
 		ch, ok := kv.result[index]
 		if ok {
+			select {
+			case <-kv.result[index]:
+			default:
+			}
 			ch <- op
 		} else {
-			kv.result[index] = make(chan Op)
+			kv.result[index] = make(chan Op, 1)
 		}
 	}
 }
