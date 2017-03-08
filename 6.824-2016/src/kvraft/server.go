@@ -6,6 +6,7 @@ import (
 	"log"
 	"raft"
 	"sync"
+	"time"
 )
 
 const Debug = 0
@@ -25,6 +26,8 @@ type Op struct {
 	Op    string
 	Key   string
 	Value string
+	Seq   int
+	Id    int64
 }
 
 type RaftKV struct {
@@ -38,6 +41,7 @@ type RaftKV struct {
 	// Your definitions here.
 	database map[string]string
 	result map[int]chan Op
+	ack map[int64]int
 }
 
 func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) {
@@ -45,6 +49,8 @@ func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) {
 	var op Op
 	op.Op = GET
 	op.Key = args.Key
+	op.Id = args.Id
+	op.Seq = args.Seq
 
 	index, _, isLeader := kv.rf.Start(op)
 	reply.WrongLeader = !isLeader
@@ -58,6 +64,7 @@ func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) {
 		if ok {
 			reply.Value = v
 			reply.Err = OK
+			kv.ack[op.Id] = op.Seq
 		} else {
 			reply.Err = ErrNoKey
 		}
@@ -70,6 +77,8 @@ func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	op.Op = args.Op
 	op.Key = args.Key
 	op.Value = args.Value
+	op.Id = args.Id
+	op.Seq = args.Seq
 
 	index, _, isLeader := kv.rf.Start(op)
 	reply.WrongLeader = !isLeader
@@ -93,12 +102,17 @@ func (kv *RaftKV) checkOpCommitted(index int, op Op) bool {
 		kv.result[index] = ch
 	}
 
-	o := <-ch
-	committed := o == op
-	if committed {
-		DPrintf("kvraft: Commit %d %v", index, op)
+	select {
+	case o := <-ch:
+		committed := o == op
+		if committed {
+			DPrintf("kvraft: Commit %d %v", index, op)
+		}
+		return committed
+	case <-time.After(time.Duration(2000 * time.Millisecond)):
+		DPrintf("kvraft: Timeout %d %v", index, op)
+		return false
 	}
-	return committed
 }
 
 func (kv *RaftKV) excute(op Op) {
@@ -112,6 +126,16 @@ func (kv *RaftKV) excute(op Op) {
 			kv.database[op.Key] = op.Value
 		}
 	}
+	kv.ack[op.Id] = op.Seq
+}
+
+func (kv *RaftKV) checkDuplicate(op Op) bool {
+	v, ok := kv.ack[op.Id]
+	if ok {
+		return v >= op.Seq
+	}
+
+	return false
 }
 
 func (kv *RaftKV) apply() {
@@ -119,7 +143,9 @@ func (kv *RaftKV) apply() {
 		msg:= <-kv.applyCh
 		op := msg.Command.(Op)
 		index := msg.Index
-		kv.excute(op)
+		if !kv.checkDuplicate(op) {
+			kv.excute(op)
+		}
 		ch, ok := kv.result[index]
 		if ok {
 			ch <- op
@@ -168,6 +194,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 	kv.result = make(map[int]chan Op)
 	kv.database = make(map[string]string)
+	kv.ack = make(map[int64]int)
 
 	go kv.apply()
 
