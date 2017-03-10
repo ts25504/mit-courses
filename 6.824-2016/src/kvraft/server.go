@@ -7,9 +7,10 @@ import (
 	"raft"
 	"sync"
 	"time"
+	"bytes"
 )
 
-const Debug = 1
+const Debug = 0
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -141,23 +142,47 @@ func (kv *RaftKV) checkDuplicate(op Op) bool {
 	return false
 }
 
+func (kv *RaftKV) startSnapshot(index int) {
+	w := new(bytes.Buffer)
+	e := gob.NewEncoder(w)
+	e.Encode(kv.database)
+	e.Encode(kv.ack)
+	data := w.Bytes()
+	kv.rf.StartSnapShot(data, index)
+}
+
+func (kv *RaftKV) readSnapshot(data []byte) {
+	r := bytes.NewBuffer(data)
+	d := gob.NewDecoder(r)
+	d.Decode(&kv.database)
+	d.Decode(&kv.ack)
+}
+
 func (kv *RaftKV) apply() {
 	for {
 		msg:= <-kv.applyCh
-		op := msg.Command.(Op)
-		index := msg.Index
-		if !kv.checkDuplicate(op) {
-			kv.excute(op)
-		}
-		ch, ok := kv.result[index]
-		if ok {
-			select {
-			case <-kv.result[index]:
-			default:
-			}
-			ch <- op
+		if msg.UseSnapshot {
+			kv.readSnapshot(msg.Snapshot)
 		} else {
-			kv.result[index] = make(chan Op, 1)
+			op := msg.Command.(Op)
+			index := msg.Index
+			if !kv.checkDuplicate(op) {
+				kv.excute(op)
+			}
+			ch, ok := kv.result[index]
+			if ok {
+				select {
+				case <-kv.result[index]:
+				default:
+				}
+				ch <- op
+			} else {
+				kv.result[index] = make(chan Op, 1)
+			}
+
+			if kv.maxraftstate != -1 && kv.rf.GetRaftStateSize() > kv.maxraftstate {
+				kv.startSnapshot(index)
+			}
 		}
 	}
 }
