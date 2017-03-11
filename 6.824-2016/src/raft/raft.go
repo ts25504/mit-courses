@@ -340,9 +340,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 	}
 
 	rf.logs = rf.logs[:args.PrevLogIndex+1-rf.getLastIncludeIndex()]
-	for i := 0; i < len(args.Entries); i++ {
-		rf.logs = append(rf.logs, args.Entries[i])
-	}
+	rf.logs = append(rf.logs, args.Entries...)
 
 	if args.LeaderCommit > rf.commitIndex {
 		if args.LeaderCommit < rf.getLastIndex() {
@@ -696,8 +694,7 @@ func (rf *Raft) apply(applyCh chan ApplyMsg) {
 		select {
 		case <-rf.commitCh:
 			rf.mu.Lock()
-			commitIndex := rf.commitIndex
-			for i := rf.lastApplied+1; i <= commitIndex; i++ {
+			for i := rf.lastApplied+1; i <= rf.commitIndex; i++ {
 				var msg ApplyMsg
 				msg.Index = i
 				msg.Command = rf.logs[i-rf.getLastIncludeIndex()].Command
