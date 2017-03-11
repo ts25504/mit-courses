@@ -98,7 +98,6 @@ func (rf *Raft) convertToFollower(term int) {
 	rf.currentTerm = term
 	rf.state = FOLLOWER
 	rf.votedFor = -1
-	rf.persist()
 }
 
 func (rf *Raft) GetRaftStateSize() int {
@@ -227,6 +226,7 @@ func (rf *Raft) sendInstallSnapshot(server int, args InstallSnapshotArgs, reply 
 	if ok && rf.state == LEADER {
 		if reply.Term > rf.currentTerm {
 			rf.convertToFollower(reply.Term)
+			rf.persist()
 		} else {
 			rf.nextIndex[server] = args.LastIncludeIndex + 1
 			rf.matchIndex[server] = args.LastIncludeIndex
@@ -362,6 +362,7 @@ func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *App
 		} else {
 			if rf.currentTerm < reply.Term {
 				rf.convertToFollower(reply.Term)
+				rf.persist()
 			} else {
 				if reply.NextIndex > 0 {
 					rf.nextIndex[server] = reply.NextIndex
@@ -532,6 +533,7 @@ func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *Request
 		} else {
 			if reply.Term > rf.currentTerm {
 				rf.convertToFollower(reply.Term)
+				rf.persist()
 				DPrintf("Term %d, Candidate %d: There is already a leader", rf.currentTerm, rf.me)
 			}
 		}
@@ -664,7 +666,10 @@ func (rf *Raft) workAsLeader() {
 
 func (rf *Raft) work() {
 	for {
-		switch rf.state {
+		rf.mu.Lock()
+		state := rf.state
+		rf.mu.Unlock()
+		switch state {
 		case FOLLOWER:
 			rf.workAsFollower()
 		case CANDIDATE:
