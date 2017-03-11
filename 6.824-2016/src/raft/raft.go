@@ -272,6 +272,10 @@ func (rf *Raft) StartSnapShot(snapshot []byte, index int) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
+	if index <= rf.getLastIncludeIndex() || index > rf.getLastIndex() {
+		return
+	}
+
 	rf.discardOldLogEntries(index)
 	rf.persist()
 	rf.snapshot(snapshot)
@@ -293,7 +297,7 @@ type AppendEntriesReply struct {
 }
 
 func (rf *Raft) decreaseNextIndex(prevLogIndex int) int {
-	nextIndex := 1
+	nextIndex := 0
 	for i := prevLogIndex - 1; i >= rf.getLastIncludeIndex(); i-- {
 		if rf.logs[i-rf.getLastIncludeIndex()].Term != rf.logs[prevLogIndex-rf.getLastIncludeIndex()].Term {
 			nextIndex = i + 1
@@ -371,11 +375,7 @@ func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *App
 				rf.convertToFollower(reply.Term)
 				rf.persist()
 			} else {
-				if reply.NextIndex > 0 {
-					rf.nextIndex[server] = reply.NextIndex
-				} else {
-					rf.nextIndex[server] = 1
-				}
+				rf.nextIndex[server] = reply.NextIndex
 			}
 		}
 	}
@@ -383,6 +383,7 @@ func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *App
 }
 
 func (rf *Raft) commitLogs() {
+	commit := false
 	for n := rf.commitIndex+1; n <= rf.getLastIndex(); n++ {
 		count := 1
 		for i := 0; i < len(rf.peers); i++ {
@@ -393,9 +394,12 @@ func (rf *Raft) commitLogs() {
 
 		if count > len(rf.peers) / 2 {
 			rf.commitIndex = n
-			rf.commitCh <- true
-			break
+			commit = true
 		}
+	}
+
+	if commit {
+		rf.commitCh <- true
 	}
 }
 

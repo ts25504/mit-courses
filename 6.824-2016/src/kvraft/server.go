@@ -152,7 +152,7 @@ func (kv *RaftKV) startSnapshot(index int) {
 	e.Encode(kv.database)
 	e.Encode(kv.ack)
 	data := w.Bytes()
-	kv.rf.StartSnapShot(data, index)
+	go kv.rf.StartSnapShot(data, index)
 }
 
 func (kv *RaftKV) readSnapshot(data []byte) {
