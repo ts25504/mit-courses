@@ -25,8 +25,6 @@ import "math/rand"
 import "bytes"
 import "encoding/gob"
 
-
-
 //
 // as each Raft peer becomes aware that successive log entries are
 // committed, the peer should send an ApplyMsg to the service (or
@@ -153,9 +151,12 @@ func (rf *Raft) readPersist(data []byte) {
 func (rf *Raft) snapshot(snapshot []byte) {
 	w := new(bytes.Buffer)
 	e := gob.NewEncoder(w)
+
 	e.Encode(rf.getLastIncludeIndex())
 	e.Encode(rf.getLastIncludeTerm())
+
 	data := w.Bytes()
+
 	if snapshot != nil {
 		data = append(data, snapshot...)
 	}
@@ -171,11 +172,11 @@ func (rf *Raft) readSnapshot(data []byte) {
 	r := bytes.NewBuffer(data)
 	d := gob.NewDecoder(r)
 
-	var lastIncludeTerm int
 	var lastIncludeIndex int
+	var lastIncludeTerm int
 
-	d.Decode(&lastIncludeTerm)
 	d.Decode(&lastIncludeIndex)
+	d.Decode(&lastIncludeTerm)
 
 	rf.installSnapshotToRaft(lastIncludeIndex, lastIncludeTerm)
 

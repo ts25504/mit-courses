@@ -10,7 +10,7 @@ import (
 	"bytes"
 )
 
-const Debug = 0
+const Debug = 1
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -152,8 +152,19 @@ func (kv *RaftKV) startSnapshot(index int) {
 }
 
 func (kv *RaftKV) readSnapshot(data []byte) {
+	if data == nil || len(data) == 0 {
+		return
+	}
+
 	r := bytes.NewBuffer(data)
 	d := gob.NewDecoder(r)
+
+	var lastIncludeIndex int
+	var lastIncludeTerm int
+
+	d.Decode(&lastIncludeIndex)
+	d.Decode(&lastIncludeTerm)
+
 	d.Decode(&kv.database)
 	d.Decode(&kv.ack)
 }
@@ -181,6 +192,7 @@ func (kv *RaftKV) apply() {
 			}
 
 			if kv.maxraftstate != -1 && kv.rf.GetRaftStateSize() > kv.maxraftstate {
+				DPrintf("kvraft: Start snapshot")
 				kv.startSnapshot(index)
 			}
 		}
