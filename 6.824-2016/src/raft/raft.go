@@ -41,6 +41,8 @@ const (
 	FOLLOWER = "Follower"
 	CANDIDATE = "Candidate"
 	LEADER = "Leader"
+
+	MAXSERVERCOUNT = 5
 )
 //
 // A Go object implementing a single Raft peer.
@@ -730,10 +732,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.votedFor = -1
 	rf.logs = append(rf.logs, LogEntry{})
 	rf.state = FOLLOWER
-	rf.heartbeatCh = make(chan bool, 1)
-	rf.leaderCh = make(chan bool, 1)
-	rf.commitCh = make(chan bool, 1)
-	rf.snapshotCh = make(chan bool, 1)
+	rf.heartbeatCh = make(chan bool, MAXSERVERCOUNT)
+	rf.leaderCh = make(chan bool, MAXSERVERCOUNT)
+	rf.commitCh = make(chan bool, MAXSERVERCOUNT)
+	rf.snapshotCh = make(chan bool, MAXSERVERCOUNT)
 	rf.voteCount = 0
 	rf.lastApplied = 0
 	rf.commitIndex = 0
