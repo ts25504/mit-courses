@@ -10,7 +10,7 @@ import (
 	"bytes"
 )
 
-const Debug = 1
+const Debug = 0
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -62,6 +62,7 @@ func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) {
 	ok := kv.checkOpCommitted(index, op)
 	if ok {
 		reply.WrongLeader = false
+		kv.mu.Lock()
 		v, ok := kv.database[args.Key]
 		if ok {
 			reply.Value = v
@@ -70,6 +71,7 @@ func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) {
 		} else {
 			reply.Err = ErrNoKey
 		}
+		kv.mu.Unlock()
 	} else {
 		reply.WrongLeader = true
 	}
@@ -100,21 +102,23 @@ func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 }
 
 func (kv *RaftKV) checkOpCommitted(index int, op Op) bool {
+	kv.mu.Lock()
 	ch, ok := kv.result[index]
 	if !ok {
 		ch = make(chan Op, 1)
 		kv.result[index] = ch
 	}
+	kv.mu.Unlock()
 
 	select {
 	case o := <-ch:
 		committed := o == op
 		if committed {
-			DPrintf("kvraft: Commit %d %v", index, op)
+			DPrintf("kvraft %d: Commit %d %v", kv.me, index, op)
 		}
 		return committed
 	case <-time.After(time.Duration(2000 * time.Millisecond)):
-		DPrintf("kvraft: Timeout %d %v", index, op)
+		DPrintf("kvraft %d: Timeout %d %v", kv.me, index, op,)
 		return false
 	}
 }
@@ -172,6 +176,7 @@ func (kv *RaftKV) readSnapshot(data []byte) {
 func (kv *RaftKV) apply() {
 	for {
 		msg:= <-kv.applyCh
+		kv.mu.Lock()
 		if msg.UseSnapshot {
 			kv.readSnapshot(msg.Snapshot)
 		} else {
@@ -192,10 +197,11 @@ func (kv *RaftKV) apply() {
 			}
 
 			if kv.maxraftstate != -1 && kv.rf.GetRaftStateSize() > kv.maxraftstate {
-				DPrintf("kvraft: Start snapshot")
+				DPrintf("kvraft %d: Start snapshot", kv.me)
 				kv.startSnapshot(index)
 			}
 		}
+		kv.mu.Unlock()
 	}
 }
 

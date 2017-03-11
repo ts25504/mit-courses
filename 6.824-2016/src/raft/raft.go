@@ -108,7 +108,6 @@ func (rf *Raft) GetRaftStateSize() int {
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
-
 	var term int
 	var isleader bool
 	// Your code here.
@@ -263,6 +262,9 @@ func (rf *Raft) discardOldLogEntries(index int) {
 }
 
 func (rf *Raft) StartSnapShot(snapshot []byte, index int) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
 	rf.discardOldLogEntries(index)
 	rf.persist()
 	rf.snapshot(snapshot)
@@ -390,6 +392,9 @@ func (rf *Raft) commitLogs() {
 }
 
 func (rf *Raft) broadcastHeartbeatJob() {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
 	rf.commitLogs()
 
 	for i := 0; i < len(rf.peers); i++ {
@@ -535,6 +540,9 @@ func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *Request
 }
 
 func (rf *Raft) broadcastRequestVote() {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
 	var args RequestVoteArgs
 	args.Term = rf.currentTerm
 	args.CandidateId = rf.me
@@ -602,16 +610,20 @@ func (rf *Raft) workAsFollower() {
 	case <-rf.heartbeatCh:
 		// DPrintf("Term %d, Follower %d: Heartbeat", rf.currentTerm, rf.me)
 	case <-time.After(time.Duration(rand.Intn(150)+150) * time.Millisecond):
+		rf.mu.Lock()
 		rf.state = CANDIDATE
 		DPrintf("Term %d, Follower %d: Election Timeout", rf.currentTerm, rf.me)
+		rf.mu.Unlock()
 	}
 }
 
 func (rf *Raft) startElection() {
+	rf.mu.Lock()
 	rf.voteCount = 1
 	rf.votedFor = rf.me
 	rf.currentTerm++
 	rf.persist()
+	rf.mu.Unlock()
 
 	rf.broadcastRequestVote()
 
@@ -623,19 +635,25 @@ func (rf *Raft) workAsCandidate() {
 	select {
 	case isLeader := <-rf.leaderCh:
 		if isLeader {
+			rf.mu.Lock()
 			rf.state = LEADER
 			DPrintf("Term %d, Candidate %d: Become the leader", rf.currentTerm, rf.me)
 			for i := 0; i < len(rf.peers); i++ {
 				rf.nextIndex[i] = rf.getLastIndex() + 1
 				rf.matchIndex[i] = 0
 			}
+			rf.mu.Unlock()
 			rf.broadcastHeartbeatJob()
 		}
 	case <-rf.heartbeatCh:
+		rf.mu.Lock()
 		DPrintf("Term %d, Candidate %d: Become follower", rf.currentTerm, rf.me)
 		rf.state = FOLLOWER
+		rf.mu.Unlock()
 	case <-time.After(time.Duration(rand.Intn(150)+150) * time.Millisecond):
+		rf.mu.Lock()
 		DPrintf("Term %d, Candidate %d: Election timeout", rf.currentTerm, rf.me)
+		rf.mu.Unlock()
 	}
 }
 
@@ -661,7 +679,9 @@ func (rf *Raft) apply(applyCh chan ApplyMsg) {
 	for {
 		select {
 		case <-rf.commitCh:
-			for i := rf.lastApplied+1; i <= rf.commitIndex; i++ {
+			rf.mu.Lock()
+			commitIndex := rf.commitIndex
+			for i := rf.lastApplied+1; i <= commitIndex; i++ {
 				var msg ApplyMsg
 				msg.Index = i
 				msg.Command = rf.logs[i-rf.getLastIncludeIndex()].Command
@@ -669,12 +689,15 @@ func (rf *Raft) apply(applyCh chan ApplyMsg) {
 				applyCh <- msg
 				rf.lastApplied = i
 			}
+			rf.mu.Unlock()
 		case <-rf.snapshotCh:
+			rf.mu.Lock()
 			var msg ApplyMsg
 			msg.UseSnapshot = true
 			msg.Snapshot = rf.persister.ReadSnapshot()
 			DPrintf("Server %d: Install Snapshot")
 			applyCh <- msg
+			rf.mu.Unlock()
 		}
 	}
 }
