@@ -109,6 +109,9 @@ func (rf *Raft) GetRaftStateSize() int {
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
 	var term int
 	var isleader bool
 	// Your code here.
@@ -143,9 +146,11 @@ func (rf *Raft) readPersist(data []byte) {
 	// Example:
 	r := bytes.NewBuffer(data)
 	d := gob.NewDecoder(r)
+	rf.mu.Lock()
 	d.Decode(&rf.currentTerm)
 	d.Decode(&rf.votedFor)
 	d.Decode(&rf.logs)
+	rf.mu.Unlock()
 }
 
 func (rf *Raft) snapshot(snapshot []byte) {
