@@ -118,7 +118,7 @@ func (kv *RaftKV) checkOpCommitted(index int, op Op) bool {
 		}
 		return committed
 	case <-time.After(time.Duration(2000 * time.Millisecond)):
-		DPrintf("kvraft %d: Timeout %d %v", kv.me, index, op,)
+		DPrintf("kvraft %d: Timeout %d %v", kv.me, index, op)
 		return false
 	}
 }
@@ -176,10 +176,12 @@ func (kv *RaftKV) readSnapshot(data []byte) {
 func (kv *RaftKV) apply() {
 	for {
 		msg:= <-kv.applyCh
-		kv.mu.Lock()
 		if msg.UseSnapshot {
+			kv.mu.Lock()
 			kv.readSnapshot(msg.Snapshot)
+			kv.mu.Unlock()
 		} else {
+			kv.mu.Lock()
 			op := msg.Command.(Op)
 			index := msg.Index
 			if !kv.checkDuplicate(op) {
@@ -197,11 +199,11 @@ func (kv *RaftKV) apply() {
 			}
 
 			if kv.maxraftstate != -1 && kv.rf.GetRaftStateSize() > kv.maxraftstate {
-				DPrintf("kvraft %d: Start snapshot", kv.me)
+				DPrintf("kvraft %d: Start snapshot %d %d", kv.me, index, kv.rf.GetRaftStateSize())
 				kv.startSnapshot(index)
 			}
+			kv.mu.Unlock()
 		}
-		kv.mu.Unlock()
 	}
 }
 

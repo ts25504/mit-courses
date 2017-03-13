@@ -184,6 +184,7 @@ func (rf *Raft) readSnapshot(data []byte) {
 	d.Decode(&lastIncludeTerm)
 
 	rf.installSnapshotToRaft(lastIncludeIndex, lastIncludeTerm)
+	rf.persist()
 
 	rf.snapshotCh <- true
 }
@@ -203,7 +204,6 @@ type InstallSnapshotReply struct {
 func (rf *Raft) InstallSnapshot(args InstallSnapshotArgs, reply *InstallSnapshotReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	defer rf.persist()
 
 	rf.heartbeatCh <- true
 
@@ -218,6 +218,7 @@ func (rf *Raft) InstallSnapshot(args InstallSnapshotArgs, reply *InstallSnapshot
 
 	rf.persister.SaveSnapshot(args.Data)
 	rf.installSnapshotToRaft(args.LastIncludeIndex, args.LastIncludeTerm)
+	rf.persist()
 
 	rf.snapshotCh <- true
 
@@ -261,7 +262,7 @@ func (rf *Raft) installSnapshotToRaft(lastIncludeIndex int, lastIncludeTerm int)
 func (rf *Raft) discardOldLogEntries(index int) {
 	var logs []LogEntry
 	logs = append(logs, LogEntry{Index: index, Term: rf.logs[index-rf.getLastIncludeIndex()].Term})
-	for i := index+1; i < len(rf.logs); i++ {
+	for i := index+1; i <= rf.getLastIndex(); i++ {
 		logs = append(logs, rf.logs[i-rf.getLastIncludeIndex()])
 	}
 
@@ -332,15 +333,21 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		return
 	}
 
-	if rf.logs[args.PrevLogIndex-rf.getLastIncludeIndex()].Term != args.PrevLogTerm {
-		reply.Term = rf.currentTerm
+	if args.PrevLogIndex >= rf.getLastIncludeIndex() {
+		if rf.logs[args.PrevLogIndex-rf.getLastIncludeIndex()].Term != args.PrevLogTerm {
+			reply.Term = rf.currentTerm
+			reply.Success = false
+			reply.NextIndex = rf.decreaseNextIndex(args.PrevLogIndex)
+			return
+		}
+		rf.logs = rf.logs[:args.PrevLogIndex+1-rf.getLastIncludeIndex()]
+		rf.logs = append(rf.logs, args.Entries...)
+		reply.Success = true
+	} else {
 		reply.Success = false
-		reply.NextIndex = rf.decreaseNextIndex(args.PrevLogIndex)
-		return
 	}
-
-	rf.logs = rf.logs[:args.PrevLogIndex+1-rf.getLastIncludeIndex()]
-	rf.logs = append(rf.logs, args.Entries...)
+	reply.NextIndex = rf.getLastIndex() + 1
+	reply.Term = rf.currentTerm
 
 	if args.LeaderCommit > rf.commitIndex {
 		if args.LeaderCommit < rf.getLastIndex() {
@@ -350,10 +357,6 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 		}
 		rf.commitCh <- true
 	}
-
-	reply.NextIndex = rf.getLastIndex() + 1
-	reply.Term = rf.currentTerm
-	reply.Success = true
 }
 
 func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *AppendEntriesReply) bool {
