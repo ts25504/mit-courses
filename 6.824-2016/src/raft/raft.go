@@ -269,7 +269,7 @@ func (rf *Raft) discardOldLogEntries(index int) {
 	rf.logs = logs
 }
 
-func (rf *Raft) StartSnapShot(snapshot []byte, index int) {
+func (rf *Raft) StartSnapshot(snapshot []byte, index int) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
