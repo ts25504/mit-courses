@@ -124,15 +124,19 @@ func (kv *RaftKV) checkOpCommitted(index int, op Op) bool {
 }
 
 func (kv *RaftKV) excute(op Op) {
-	if op.Op == PUT {
+	switch op.Op {
+	case PUT:
 		kv.database[op.Key] = op.Value
-	} else if op.Op == APPEND {
+	case APPEND:
 		v, ok := kv.database[op.Key]
 		if ok {
 			kv.database[op.Key] = v + op.Value
 		} else {
 			kv.database[op.Key] = op.Value
 		}
+	case GET:
+		return
+	default:
 	}
 	kv.ack[op.Id] = op.Seq
 }
@@ -175,7 +179,7 @@ func (kv *RaftKV) readSnapshot(data []byte) {
 
 func (kv *RaftKV) apply() {
 	for {
-		msg:= <-kv.applyCh
+		msg := <-kv.applyCh
 		if msg.UseSnapshot {
 			kv.mu.Lock()
 			kv.readSnapshot(msg.Snapshot)
