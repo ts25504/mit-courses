@@ -269,10 +269,10 @@ func (sm *ShardMaster) rebalanceLeave(gid int) {
 }
 
 func (sm *ShardMaster) excute(op Op) {
-	config := sm.newConfig()
 
 	switch op.Op {
 	case Join:
+		config := sm.newConfig()
 		for gid, servers := range op.Servers {
 			_, ok := config.Groups[gid]
 			if !ok {
@@ -281,6 +281,7 @@ func (sm *ShardMaster) excute(op Op) {
 			}
 		}
 	case Leave:
+		config := sm.newConfig()
 		for _, gid := range op.GIDs {
 			_, ok := config.Groups[gid]
 			if ok {
@@ -289,6 +290,7 @@ func (sm *ShardMaster) excute(op Op) {
 			}
 		}
 	case Move:
+		config := sm.newConfig()
 		if op.GIDs != nil && len(op.GIDs) > 0 {
 			config.Shards[op.Shard] = op.GIDs[0]
 		}

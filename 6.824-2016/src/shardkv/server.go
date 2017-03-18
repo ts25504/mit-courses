@@ -8,6 +8,7 @@ import "sync"
 import "encoding/gob"
 import "time"
 import "bytes"
+//import "fmt"
 
 type Op struct {
 	// Your definitions here.
@@ -42,6 +43,14 @@ type ShardKV struct {
 
 func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
+	kv.mu.Lock()
+	isWrongGroup := kv.checkWrongGroup(args.Key)
+	kv.mu.Unlock()
+	if isWrongGroup {
+		reply.Err = ErrWrongGroup
+		return
+	}
+
 	var op Op
 	op.Op = Get
 	op.Key = args.Key
@@ -68,6 +77,14 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 
 func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
+	kv.mu.Lock()
+	isWrongGroup := kv.checkWrongGroup(args.Key)
+	kv.mu.Unlock()
+	if isWrongGroup {
+		reply.Err = ErrWrongGroup
+		return
+	}
+
 	var op Op
 	op.Op = args.Op
 	op.Key = args.Key
@@ -140,24 +157,24 @@ func (kv *ShardKV) excute(op Op) {
 	kv.ack[op.Id] = op.Seq
 }
 
-func (kv *ShardKV) checkOp(op Op) bool {
+func (kv *ShardKV) checkOpInvalid(op Op) bool {
 	switch op.Op {
 	case Reconfigure:
-		return kv.config.Num < op.Config.Num
+		return kv.config.Num >= op.Config.Num
 	case Get, Put, Append:
-		return kv.checkDuplicate(op) && kv.checkShard(op)
+		return kv.checkDuplicate(op) && kv.checkWrongGroup(op.Key)
 	default:
-		return true
+		return false
 	}
 }
 
-func (kv *ShardKV) checkShard(op Op) bool {
-	shard := key2shard(op.Key)
+func (kv *ShardKV) checkWrongGroup(key string) bool {
+	shard := key2shard(key)
 	if kv.gid != kv.config.Shards[shard] {
-		return false;
+		return true;
 	}
 
-	return true
+	return false
 }
 
 func (kv *ShardKV) checkDuplicate(op Op) bool {
@@ -207,7 +224,7 @@ func (kv *ShardKV) apply() {
 			kv.mu.Lock()
 			op := msg.Command.(Op)
 			index := msg.Index
-			if !kv.checkOp(op) {
+			if !kv.checkOpInvalid(op) {
 				kv.excute(op)
 			}
 			ch, ok := kv.result[index]
@@ -230,11 +247,6 @@ func (kv *ShardKV) apply() {
 }
 
 func (kv *ShardKV) GetShard(args *GetShardArgs, reply *GetShardReply) {
-	if kv.config.Num < args.Config.Num {
-		reply.Err = ErrNotReady
-		return
-	}
-
 	var op Op
 	op.Op = GetShard
 	shard := args.Shard
@@ -242,10 +254,11 @@ func (kv *ShardKV) GetShard(args *GetShardArgs, reply *GetShardReply) {
 	ok := kv.startOp(op)
 	if ok {
 		reply.WrongLeader = false
-		kv.mu.Lock()
 		reply.Ack = map[int64]int{}
 		reply.Database = map[string]string{}
+		reply.Err = OK
 
+		kv.mu.Lock()
 		for key := range kv.database {
 			if key2shard(key) == shard {
 				reply.Database[key] = kv.database[key]
@@ -276,12 +289,9 @@ func (kv *ShardKV) reconfigure(newConfig shardmaster.Config) bool {
 			for _, server := range oldConfig.Groups[oldGid] {
 				srv := kv.make_end(server)
 				ok := srv.Call("ShardKV.GetShard", &args, &reply)
-				if ok && reply.WrongLeader == false && reply.Err == OK {
+				if ok && reply.Err == OK {
+					//fmt.Println(kv.gid, kv.me, server, "ok", i, reply.Database)
 					break
-				}
-
-				if ok && reply.WrongLeader == false && reply.Err == ErrNotReady {
-					return false
 				}
 			}
 			transfer.Merge(reply)
