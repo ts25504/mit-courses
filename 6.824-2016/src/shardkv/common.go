@@ -1,5 +1,7 @@
 package shardkv
 
+import "shardmaster"
+
 //
 // Sharded key/value server.
 // Lots of replica groups, each running op-at-a-time paxos.
@@ -14,9 +16,11 @@ const (
 	ErrNoKey      = "ErrNoKey"
 	ErrWrongGroup = "ErrWrongGroup"
 
-	Get      = "Get"
-	Put      = "Put"
-	Append   = "Append"
+	Get         = "Get"
+	Put         = "Put"
+	Append      = "Append"
+	GetShard    = "GetShard"
+	Reconfigure = "Reconfigure"
 )
 
 type Err string
@@ -50,4 +54,16 @@ type GetReply struct {
 	WrongLeader bool
 	Err         Err
 	Value       string
+}
+
+type GetShardArgs struct {
+	Shard  int
+	Config shardmaster.Config
+}
+
+type GetShardReply struct {
+	Err      Err
+	database map[string]string
+	result   map[int]chan Op
+	ack      map[int64]int
 }

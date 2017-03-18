@@ -8,7 +8,7 @@ import "sync"
 import "encoding/gob"
 import "time"
 import "bytes"
-
+import "shardmaster"
 
 type Op struct {
 	// Your definitions here.
@@ -32,11 +32,12 @@ type ShardKV struct {
 	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
+	mck          *shardmaster.Clerk
 	database     map[string]string
 	result       map[int]chan Op
 	ack          map[int64]int
+	config       shardmaster.Config
 }
-
 
 func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
@@ -199,6 +200,43 @@ func (kv *ShardKV) apply() {
 	}
 }
 
+func (kv *ShardKV) GetShard(args *GetShardArgs, reply *GetShardReply) {
+}
+
+func (kv *ShardKV) reconfigure(newConfig shardmaster.Config) {
+	oldConfig := &kv.config
+
+	for i := 0; i < shardmaster.NShards; i++ {
+		newGid := newConfig.Shards[i]
+		oldGid := oldConfig.Shards[i]
+		if newGid == kv.gid && oldGid != kv.gid {
+			var args GetShardArgs
+			args.Shard = i
+			args.Config = *oldConfig
+			for _, server := range oldConfig.Groups[oldGid] {
+				var reply GetShardReply
+				srv := kv.make_end(server)
+				ok := srv.Call("ShardKV.GetShard", &args, &reply)
+				if ok && reply.Err == OK {
+					break
+				}
+			}
+		}
+	}
+}
+
+func (kv *ShardKV) tick() {
+	for {
+		newConfig := kv.mck.Query(-1)
+		for i := kv.config.Num+1; i <= newConfig.Num; i++ {
+			config := kv.mck.Query(i)
+			kv.reconfigure(config)
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
 //
 // the tester calls Kill() when a ShardKV instance won't
 // be needed again. you are not required to do anything
@@ -254,15 +292,16 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	// Your initialization code here.
 
 	// Use something like this to talk to the shardmaster:
-	// kv.mck = shardmaster.MakeClerk(kv.masters)
-
+	kv.mck = shardmaster.MakeClerk(kv.masters)
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 	kv.result = make(map[int]chan Op)
 	kv.database = make(map[string]string)
 	kv.ack = make(map[int64]int)
+	kv.config = shardmaster.Config{Num:-1}
 
 	go kv.apply()
+	go kv.tick()
 
 	return kv
 }
