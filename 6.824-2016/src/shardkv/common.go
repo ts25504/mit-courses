@@ -14,9 +14,9 @@ const (
 	ErrNoKey      = "ErrNoKey"
 	ErrWrongGroup = "ErrWrongGroup"
 
-	GET      = "Get"
-	PUT      = "Put"
-	APPEND   = "Append"
+	Get      = "Get"
+	Put      = "Put"
+	Append   = "Append"
 )
 
 type Err string

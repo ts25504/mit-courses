@@ -34,10 +34,10 @@ type Config struct {
 const (
 	OK = "OK"
 
-	JOIN = "Join"
-	LEAVE = "Leave"
-	MOVE = "Move"
-	QUERY = "Query"
+	Join = "Join"
+	Leave = "Leave"
+	Move = "Move"
+	Query = "Query"
 )
 
 type Err string

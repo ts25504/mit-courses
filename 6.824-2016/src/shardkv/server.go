@@ -32,16 +32,16 @@ type ShardKV struct {
 	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
-	database map[string]string
-	result map[int]chan Op
-	ack map[int64]int
+	database     map[string]string
+	result       map[int]chan Op
+	ack          map[int64]int
 }
 
 
 func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
 	var op Op
-	op.Op = GET
+	op.Op = Get
 	op.Key = args.Key
 	op.Id = args.Id
 	op.Seq = args.Seq
@@ -114,16 +114,16 @@ func (kv *ShardKV) checkOpCommitted(index int, op Op) bool {
 
 func (kv *ShardKV) excute(op Op) {
 	switch op.Op {
-	case PUT:
+	case Put:
 		kv.database[op.Key] = op.Value
-	case APPEND:
+	case Append:
 		v, ok := kv.database[op.Key]
 		if ok {
 			kv.database[op.Key] = v + op.Value
 		} else {
 			kv.database[op.Key] = op.Value
 		}
-	case GET:
+	case Get:
 		return
 	default:
 	}

@@ -59,7 +59,7 @@ func (sm *ShardMaster) Join(args *JoinArgs, reply *JoinReply) {
 	op.Servers = args.Servers
 	op.Id = args.Id
 	op.Seq = args.Seq
-	op.Op = JOIN
+	op.Op = Join
 
 	index, _, isLeader := sm.rf.Start(op)
 	reply.WrongLeader = !isLeader
@@ -82,7 +82,7 @@ func (sm *ShardMaster) Leave(args *LeaveArgs, reply *LeaveReply) {
 	op.GIDs = args.GIDs
 	op.Id = args.Id
 	op.Seq = args.Seq
-	op.Op = LEAVE
+	op.Op = Leave
 
 	index, _, isLeader := sm.rf.Start(op)
 	reply.WrongLeader = !isLeader
@@ -106,7 +106,7 @@ func (sm *ShardMaster) Move(args *MoveArgs, reply *MoveReply) {
 	op.GIDs = append(op.GIDs, args.GID)
 	op.Id = args.Id
 	op.Seq = args.Seq
-	op.Op = MOVE
+	op.Op = Move
 
 	index, _, isLeader := sm.rf.Start(op)
 	reply.WrongLeader = !isLeader
@@ -129,7 +129,7 @@ func (sm *ShardMaster) Query(args *QueryArgs, reply *QueryReply) {
 	op.Num = args.Num
 	op.Id = args.Id
 	op.Seq = args.Seq
-	op.Op = QUERY
+	op.Op = Query
 
 	index, _, isLeader := sm.rf.Start(op)
 	reply.WrongLeader = !isLeader
@@ -272,7 +272,7 @@ func (sm *ShardMaster) excute(op Op) {
 	config := sm.newConfig()
 
 	switch op.Op {
-	case JOIN:
+	case Join:
 		for gid, servers := range op.Servers {
 			_, ok := config.Groups[gid]
 			if !ok {
@@ -280,7 +280,7 @@ func (sm *ShardMaster) excute(op Op) {
 				sm.rebalanceJoin(gid)
 			}
 		}
-	case LEAVE:
+	case Leave:
 		for _, gid := range op.GIDs {
 			_, ok := config.Groups[gid]
 			if ok {
@@ -288,11 +288,11 @@ func (sm *ShardMaster) excute(op Op) {
 				sm.rebalanceLeave(gid)
 			}
 		}
-	case MOVE:
+	case Move:
 		if op.GIDs != nil && len(op.GIDs) > 0 {
 			config.Shards[op.Shard] = op.GIDs[0]
 		}
-	case QUERY:
+	case Query:
 		return
 	default:
 	}

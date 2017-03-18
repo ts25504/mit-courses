@@ -41,14 +41,14 @@ type RaftKV struct {
 
 	// Your definitions here.
 	database map[string]string
-	result map[int]chan Op
-	ack map[int64]int
+	result   map[int]chan Op
+	ack      map[int64]int
 }
 
 func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
 	var op Op
-	op.Op = GET
+	op.Op = Get
 	op.Key = args.Key
 	op.Id = args.Id
 	op.Seq = args.Seq
@@ -125,16 +125,16 @@ func (kv *RaftKV) checkOpCommitted(index int, op Op) bool {
 
 func (kv *RaftKV) excute(op Op) {
 	switch op.Op {
-	case PUT:
+	case Put:
 		kv.database[op.Key] = op.Value
-	case APPEND:
+	case Append:
 		v, ok := kv.database[op.Key]
 		if ok {
 			kv.database[op.Key] = v + op.Value
 		} else {
 			kv.database[op.Key] = op.Value
 		}
-	case GET:
+	case Get:
 		return
 	default:
 	}
