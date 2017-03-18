@@ -14,11 +14,13 @@ type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
-	Op    string
-	Key   string
-	Value string
-	Seq   int
-	Id    int64
+	Op       string
+	Key      string
+	Value    string
+	Seq      int
+	Id       int64
+	Config   shardmaster.Config
+	Transfer GetShardReply
 }
 
 type ShardKV struct {
@@ -47,13 +49,7 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 	op.Id = args.Id
 	op.Seq = args.Seq
 
-	index, _, isLeader := kv.rf.Start(op)
-	reply.WrongLeader = !isLeader
-	if !isLeader {
-		return
-	}
-
-	ok := kv.checkOpCommitted(index, op)
+	ok := kv.startOp(op)
 	if ok {
 		reply.WrongLeader = false
 		kv.mu.Lock()
@@ -80,13 +76,7 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	op.Id = args.Id
 	op.Seq = args.Seq
 
-	index, _, isLeader := kv.rf.Start(op)
-	reply.WrongLeader = !isLeader
-	if !isLeader {
-		return
-	}
-
-	ok := kv.checkOpCommitted(index, op)
+	ok := kv.startOp(op)
 	if ok {
 		reply.WrongLeader = false
 		reply.Err = OK
@@ -95,7 +85,12 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	}
 }
 
-func (kv *ShardKV) checkOpCommitted(index int, op Op) bool {
+func (kv *ShardKV) startOp(op Op) bool {
+	index, _, isLeader := kv.rf.Start(op)
+	if !isLeader {
+		return false
+	}
+
 	kv.mu.Lock()
 	ch, ok := kv.result[index]
 	if !ok {
@@ -106,7 +101,7 @@ func (kv *ShardKV) checkOpCommitted(index int, op Op) bool {
 
 	select {
 	case o := <-ch:
-		committed := o == op
+		committed := o.Seq == op.Seq
 		return committed
 	case <-time.After(time.Duration(2000 * time.Millisecond)):
 		return false
@@ -126,9 +121,44 @@ func (kv *ShardKV) excute(op Op) {
 		}
 	case Get:
 		return
+	case GetShard:
+		return
+	case Reconfigure:
+		info := &op.Transfer
+		for key := range info.Database {
+			kv.database[key] = info.Database[key]
+		}
+		for id := range info.Ack {
+			seq, exists := kv.ack[id]
+			if !exists || seq < info.Ack[id] {
+				kv.ack[id] = info.Ack[id]
+			}
+		}
+		kv.config = op.Config
+		return
 	default:
 	}
 	kv.ack[op.Id] = op.Seq
+}
+
+func (kv *ShardKV) checkOp(op Op) bool {
+	switch op.Op {
+	case Reconfigure:
+		return kv.config.Num < op.Config.Num
+	case Get, Put, Append:
+		return kv.checkDuplicate(op) && kv.checkShard(op)
+	default:
+		return true
+	}
+}
+
+func (kv *ShardKV) checkShard(op Op) bool {
+	shard := key2shard(op.Key)
+	if kv.gid != kv.config.Shards[shard] {
+		return false;
+	}
+
+	return true
 }
 
 func (kv *ShardKV) checkDuplicate(op Op) bool {
@@ -178,7 +208,7 @@ func (kv *ShardKV) apply() {
 			kv.mu.Lock()
 			op := msg.Command.(Op)
 			index := msg.Index
-			if !kv.checkDuplicate(op) {
+			if !kv.checkOp(op) {
 				kv.excute(op)
 			}
 			ch, ok := kv.result[index]
@@ -201,10 +231,40 @@ func (kv *ShardKV) apply() {
 }
 
 func (kv *ShardKV) GetShard(args *GetShardArgs, reply *GetShardReply) {
+	if kv.config.Num < args.Config.Num {
+		reply.Err = ErrNotReady
+		return
+	}
+
+	var op Op
+	op.Op = GetShard
+	shard := args.Shard
+
+	ok := kv.startOp(op)
+	if ok {
+		reply.WrongLeader = false
+		kv.mu.Lock()
+		reply.Ack = map[int64]int{}
+		reply.Database = map[string]string{}
+
+		for key := range kv.database {
+			if key2shard(key) == shard {
+				reply.Database[key] = kv.database[key]
+			}
+		}
+
+		for id := range kv.ack {
+			reply.Ack[id] = kv.ack[id]
+		}
+		kv.mu.Unlock()
+	} else {
+		reply.WrongLeader = true
+	}
 }
 
-func (kv *ShardKV) reconfigure(newConfig shardmaster.Config) {
+func (kv *ShardKV) reconfigure(newConfig shardmaster.Config) bool {
 	oldConfig := &kv.config
+	transfer := GetShardReply{OK, map[string]string{}, map[int64]int{}, false}
 
 	for i := 0; i < shardmaster.NShards; i++ {
 		newGid := newConfig.Shards[i]
@@ -213,15 +273,32 @@ func (kv *ShardKV) reconfigure(newConfig shardmaster.Config) {
 			var args GetShardArgs
 			args.Shard = i
 			args.Config = *oldConfig
+			var reply GetShardReply
 			for _, server := range oldConfig.Groups[oldGid] {
-				var reply GetShardReply
 				srv := kv.make_end(server)
 				ok := srv.Call("ShardKV.GetShard", &args, &reply)
-				if ok && reply.Err == OK {
+				if ok && reply.WrongLeader == false && reply.Err == OK {
 					break
 				}
+
+				if ok && reply.WrongLeader == false && reply.Err == ErrNotReady {
+					return false
+				}
 			}
+			transfer.Merge(reply)
 		}
+	}
+
+	var op Op
+	op.Op = Reconfigure
+	op.Config = newConfig
+	op.Transfer = transfer
+
+	ok := kv.startOp(op)
+	if ok {
+		return true
+	} else {
+		return false
 	}
 }
 
@@ -230,7 +307,9 @@ func (kv *ShardKV) tick() {
 		newConfig := kv.mck.Query(-1)
 		for i := kv.config.Num+1; i <= newConfig.Num; i++ {
 			config := kv.mck.Query(i)
-			kv.reconfigure(config)
+			if !kv.reconfigure(config) {
+				break
+			}
 		}
 
 		time.Sleep(100 * time.Millisecond)

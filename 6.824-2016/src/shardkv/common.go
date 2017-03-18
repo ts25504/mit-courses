@@ -16,6 +16,7 @@ const (
 	ErrNoKey      = "ErrNoKey"
 	ErrWrongGroup = "ErrWrongGroup"
 
+	ErrNotReady = "ErrNotReady"
 	Get         = "Get"
 	Put         = "Put"
 	Append      = "Append"
@@ -62,8 +63,20 @@ type GetShardArgs struct {
 }
 
 type GetShardReply struct {
-	Err      Err
-	database map[string]string
-	result   map[int]chan Op
-	ack      map[int64]int
+	Err         Err
+	Database    map[string]string
+	Ack         map[int64]int
+	WrongLeader bool
+}
+
+func (reply *GetShardReply) Merge(other GetShardReply) {
+	for key := range other.Database {
+		reply.Database[key] = other.Database[key]
+	}
+	for id := range other.Ack {
+		seq, exists := reply.Ack[id]
+		if !exists || seq < other.Ack[id] {
+			reply.Ack[id] = other.Ack[id]
+		}
+	}
 }
