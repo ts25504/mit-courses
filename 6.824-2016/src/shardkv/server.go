@@ -275,7 +275,9 @@ func (kv *ShardKV) GetShard(args *GetShardArgs, reply *GetShardReply) {
 }
 
 func (kv *ShardKV) reconfigure(newConfig shardmaster.Config) bool {
-	oldConfig := &kv.config
+	kv.mu.Lock()
+	oldConfig := kv.config
+	kv.mu.Unlock()
 	transfer := GetShardReply{OK, map[string]string{}, map[int64]int{}, false}
 
 	for i := 0; i < shardmaster.NShards; i++ {
@@ -284,7 +286,7 @@ func (kv *ShardKV) reconfigure(newConfig shardmaster.Config) bool {
 		if newGid == kv.gid && oldGid != kv.gid {
 			var args GetShardArgs
 			args.Shard = i
-			args.Config = *oldConfig
+			args.Config = oldConfig
 			var reply GetShardReply
 			for _, server := range oldConfig.Groups[oldGid] {
 				srv := kv.make_end(server)
@@ -314,7 +316,10 @@ func (kv *ShardKV) reconfigure(newConfig shardmaster.Config) bool {
 func (kv *ShardKV) tick() {
 	for {
 		newConfig := kv.mck.Query(-1)
-		for i := kv.config.Num+1; i <= newConfig.Num; i++ {
+		kv.mu.Lock()
+		currConfig := kv.config
+		kv.mu.Unlock()
+		for i := currConfig.Num+1; i <= newConfig.Num; i++ {
 			config := kv.mck.Query(i)
 			if !kv.reconfigure(config) {
 				break
