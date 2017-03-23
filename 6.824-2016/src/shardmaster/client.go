@@ -13,9 +13,9 @@ import "sync"
 type Clerk struct {
 	servers []*labrpc.ClientEnd
 	// Your data here.
-	id      int64
-	seq     int
-	mu      sync.Mutex
+	id  int64
+	seq int
+	mu  sync.Mutex
 }
 
 func nrand() int64 {

@@ -34,9 +34,9 @@ type Config struct {
 const (
 	OK = "OK"
 
-	Join = "Join"
+	Join  = "Join"
 	Leave = "Leave"
-	Move = "Move"
+	Move  = "Move"
 	Query = "Query"
 )
 
@@ -44,8 +44,8 @@ type Err string
 
 type JoinArgs struct {
 	Servers map[int][]string // new GID -> servers mappings
-	Id    int64
-	Seq   int
+	Id      int64
+	Seq     int
 }
 
 type JoinReply struct {
@@ -55,8 +55,8 @@ type JoinReply struct {
 
 type LeaveArgs struct {
 	GIDs []int
-	Id    int64
-	Seq   int
+	Id   int64
+	Seq  int
 }
 
 type LeaveReply struct {
@@ -78,8 +78,8 @@ type MoveReply struct {
 
 type QueryArgs struct {
 	Num int // desired config number
-	Id    int64
-	Seq   int
+	Id  int64
+	Seq int
 }
 
 type QueryReply struct {

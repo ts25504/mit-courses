@@ -16,7 +16,6 @@ type ViewServer struct {
 	rpccount int32 // for testing
 	me       string
 
-
 	// Your declarations here.
 }
 
@@ -39,7 +38,6 @@ func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
 
 	return nil
 }
-
 
 //
 // tick() is called once per PingInterval; it should notice

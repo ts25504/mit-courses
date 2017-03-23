@@ -40,4 +40,3 @@ type GetReply struct {
 	Err   Err
 	Value string
 }
-

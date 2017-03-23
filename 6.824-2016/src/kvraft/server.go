@@ -1,13 +1,13 @@
 package raftkv
 
 import (
+	"bytes"
 	"encoding/gob"
 	"labrpc"
 	"log"
 	"raft"
 	"sync"
 	"time"
-	"bytes"
 )
 
 const Debug = 0
@@ -18,7 +18,6 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 	}
 	return
 }
-
 
 type Op struct {
 	// Your definitions here.

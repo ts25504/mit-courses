@@ -24,11 +24,9 @@ type ShardMaster struct {
 	configs []Config // indexed by config num
 }
 
-
 type Op struct {
 	// Your data here.
 }
-
 
 func (sm *ShardMaster) Join(args *JoinArgs, reply *JoinReply) error {
 	// Your code here.

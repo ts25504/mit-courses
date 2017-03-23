@@ -17,7 +17,6 @@ import "shardmaster"
 import "io/ioutil"
 import "strconv"
 
-
 const Debug = 0
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
@@ -27,11 +26,9 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 	return
 }
 
-
 type Op struct {
 	// Your definitions here.
 }
-
 
 type DisKV struct {
 	mu         sync.Mutex
@@ -138,7 +135,6 @@ func (kv *DisKV) fileReplaceShard(shard int, m map[string]string) {
 	}
 }
 
-
 func (kv *DisKV) Get(args *GetArgs, reply *GetReply) error {
 	// Your code here.
 	return nil
@@ -221,8 +217,6 @@ func StartServer(gid int64, shardmasters []string,
 	kv.px = paxos.Make(servers, me, rpcs)
 
 	// log.SetOutput(os.Stdout)
-
-
 
 	os.Remove(servers[me])
 	l, e := net.Listen("unix", servers[me])

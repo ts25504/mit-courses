@@ -1,10 +1,10 @@
 package mapreduce
 
 import (
-	"hash/fnv"
-	"os"
 	"encoding/json"
+	"hash/fnv"
 	"log"
+	"os"
 )
 
 // doMap does the job of a map worker: it reads one of the input files
@@ -75,7 +75,7 @@ func doMap(
 
 		enc := json.NewEncoder(file)
 		for _, kv := range kvs {
-			if ihash(kv.Key) % uint32(nReduce) == uint32(i) {
+			if ihash(kv.Key)%uint32(nReduce) == uint32(i) {
 				err = enc.Encode(&kv)
 				if err != nil {
 					log.Fatal("Map: ", err)

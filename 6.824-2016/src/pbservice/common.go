@@ -32,5 +32,4 @@ type GetReply struct {
 	Value string
 }
 
-
 // Your RPC definitions here.

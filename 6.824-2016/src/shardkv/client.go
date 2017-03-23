@@ -41,9 +41,9 @@ type Clerk struct {
 	config   shardmaster.Config
 	make_end func(string) *labrpc.ClientEnd
 	// You will have to modify this struct.
-	id      int64
-	seq     int
-	mu      sync.Mutex
+	id  int64
+	seq int
+	mu  sync.Mutex
 }
 
 //

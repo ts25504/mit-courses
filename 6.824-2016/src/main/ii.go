@@ -44,13 +44,13 @@ func reduceF(key string, values []string) string {
 		i++
 	}
 
-	value := strconv.Itoa(len(files)) + " ";
+	value := strconv.Itoa(len(files)) + " "
 
 	sort.Strings(files)
 
 	for i, f := range files {
 		value += f
-		if i != len(files) - 1 {
+		if i != len(files)-1 {
 			value += ","
 		}
 	}

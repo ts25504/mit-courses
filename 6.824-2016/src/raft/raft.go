@@ -38,12 +38,13 @@ type ApplyMsg struct {
 }
 
 const (
-	FOLLOWER = "Follower"
+	FOLLOWER  = "Follower"
 	CANDIDATE = "Candidate"
-	LEADER = "Leader"
+	LEADER    = "Leader"
 
 	MAXSERVERCOUNT = 5
 )
+
 //
 // A Go object implementing a single Raft peer.
 //
@@ -56,22 +57,22 @@ type Raft struct {
 	// Your data here.
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
-	currentTerm   int
-	votedFor      int
-	logs          []LogEntry
+	currentTerm int
+	votedFor    int
+	logs        []LogEntry
 
-	commitIndex   int
-	lastApplied   int
+	commitIndex int
+	lastApplied int
 
-	nextIndex     []int
-	matchIndex    []int
+	nextIndex  []int
+	matchIndex []int
 
-	state         string
-	heartbeatCh   chan bool
-	leaderCh      chan bool
-	commitCh      chan bool
-	snapshotCh    chan bool
-	voteCount     int
+	state       string
+	heartbeatCh chan bool
+	leaderCh    chan bool
+	commitCh    chan bool
+	snapshotCh  chan bool
+	voteCount   int
 }
 
 type LogEntry struct {
@@ -246,7 +247,7 @@ func (rf *Raft) sendInstallSnapshot(server int, args InstallSnapshotArgs, reply 
 func (rf *Raft) installSnapshotToRaft(lastIncludeIndex int, lastIncludeTerm int) {
 	var logs []LogEntry
 	logs = append(logs, LogEntry{Term: lastIncludeTerm, Index: lastIncludeIndex})
-	for i := len(rf.logs)-1; i >= 0; i-- {
+	for i := len(rf.logs) - 1; i >= 0; i-- {
 		if rf.logs[i].Index == lastIncludeIndex && rf.logs[i].Term == lastIncludeTerm {
 			logs = append(logs, rf.logs[i+1:]...)
 			break
@@ -262,7 +263,7 @@ func (rf *Raft) installSnapshotToRaft(lastIncludeIndex int, lastIncludeTerm int)
 func (rf *Raft) discardOldLogEntries(index int) {
 	var logs []LogEntry
 	logs = append(logs, LogEntry{Index: index, Term: rf.logs[index-rf.getLastIncludeIndex()].Term})
-	for i := index+1; i <= rf.getLastIndex(); i++ {
+	for i := index + 1; i <= rf.getLastIndex(); i++ {
 		logs = append(logs, rf.logs[i-rf.getLastIncludeIndex()])
 	}
 
@@ -385,7 +386,7 @@ func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *App
 
 func (rf *Raft) commitLogs() {
 	commit := false
-	for n := rf.commitIndex+1; n <= rf.getLastIndex(); n++ {
+	for n := rf.commitIndex + 1; n <= rf.getLastIndex(); n++ {
 		count := 1
 		for i := 0; i < len(rf.peers); i++ {
 			if rf.me != i && rf.matchIndex[i] >= n && rf.logs[n-rf.getLastIncludeIndex()].Term == rf.currentTerm {
@@ -393,7 +394,7 @@ func (rf *Raft) commitLogs() {
 			}
 		}
 
-		if count > len(rf.peers) / 2 {
+		if count > len(rf.peers)/2 {
 			rf.commitIndex = n
 			commit = true
 		}
@@ -538,7 +539,7 @@ func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *Request
 	if ok && rf.state == CANDIDATE {
 		if reply.VoteGranted {
 			rf.voteCount++
-			if rf.voteCount > len(rf.peers) / 2 {
+			if rf.voteCount > len(rf.peers)/2 {
 				rf.state = LEADER
 				rf.leaderCh <- true
 			}
@@ -697,11 +698,11 @@ func (rf *Raft) apply(applyCh chan ApplyMsg) {
 		select {
 		case <-rf.commitCh:
 			rf.mu.Lock()
-			for i := rf.lastApplied+1; i <= rf.commitIndex; i++ {
+			for i := rf.lastApplied + 1; i <= rf.commitIndex; i++ {
 				var msg ApplyMsg
 				msg.Index = i
 				msg.Command = rf.logs[i-rf.getLastIncludeIndex()].Command
-				DPrintf("Server %d: Commit log Term %d Index %d Command %v", rf.me,  rf.logs[i-rf.getLastIncludeIndex()].Term, msg.Index, msg.Command)
+				DPrintf("Server %d: Commit log Term %d Index %d Command %v", rf.me, rf.logs[i-rf.getLastIncludeIndex()].Term, msg.Index, msg.Command)
 				applyCh <- msg
 				rf.lastApplied = i
 			}

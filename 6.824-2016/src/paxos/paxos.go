@@ -31,7 +31,6 @@ import "sync/atomic"
 import "fmt"
 import "math/rand"
 
-
 // px.Status() return values, indicating
 // whether an agreement has been decided,
 // or Paxos has not yet reached agreement,
@@ -52,7 +51,6 @@ type Paxos struct {
 	rpcCount   int32 // for testing
 	peers      []string
 	me         int // index into peers[]
-
 
 	// Your data here.
 }
@@ -92,7 +90,6 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
 	fmt.Println(err)
 	return false
 }
-
 
 //
 // the application wants paxos to start agreement on
@@ -170,8 +167,6 @@ func (px *Paxos) Status(seq int) (Fate, interface{}) {
 	return Pending, nil
 }
 
-
-
 //
 // tell the peer to shut itself down.
 // for testing.
@@ -213,7 +208,6 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 	px := &Paxos{}
 	px.peers = peers
 	px.me = me
-
 
 	// Your initialization code here.
 
@@ -267,7 +261,6 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 			}
 		}()
 	}
-
 
 	return px
 }

@@ -1,6 +1,5 @@
 package shardkv
 
-
 import "shardmaster"
 import "labrpc"
 import "raft"
@@ -8,6 +7,7 @@ import "sync"
 import "encoding/gob"
 import "time"
 import "bytes"
+
 //import "fmt"
 
 type Op struct {
@@ -34,11 +34,11 @@ type ShardKV struct {
 	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
-	mck          *shardmaster.Clerk
-	database     map[string]string
-	result       map[int]chan Op
-	ack          map[int64]int
-	config       shardmaster.Config
+	mck      *shardmaster.Clerk
+	database map[string]string
+	result   map[int]chan Op
+	ack      map[int64]int
+	config   shardmaster.Config
 }
 
 func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
@@ -171,7 +171,7 @@ func (kv *ShardKV) checkOpInvalid(op Op) bool {
 func (kv *ShardKV) checkWrongGroup(key string) bool {
 	shard := key2shard(key)
 	if kv.gid != kv.config.Shards[shard] {
-		return true;
+		return true
 	}
 
 	return false
@@ -319,7 +319,7 @@ func (kv *ShardKV) tick() {
 		kv.mu.Lock()
 		currConfig := kv.config
 		kv.mu.Unlock()
-		for i := currConfig.Num+1; i <= newConfig.Num; i++ {
+		for i := currConfig.Num + 1; i <= newConfig.Num; i++ {
 			config := kv.mck.Query(i)
 			if !kv.reconfigure(config) {
 				break
@@ -340,7 +340,6 @@ func (kv *ShardKV) Kill() {
 	kv.rf.Kill()
 	// Your code here, if desired.
 }
-
 
 //
 // servers[] contains the ports of the servers in this group.
@@ -391,7 +390,7 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	kv.result = make(map[int]chan Op)
 	kv.database = make(map[string]string)
 	kv.ack = make(map[int64]int)
-	kv.config = shardmaster.Config{Num:-1}
+	kv.config = shardmaster.Config{Num: -1}
 
 	go kv.apply()
 	go kv.tick()

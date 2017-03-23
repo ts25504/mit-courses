@@ -22,7 +22,6 @@ type LockServer struct {
 	locks map[string]bool
 }
 
-
 //
 // server Lock RPC handler.
 //
@@ -31,7 +30,6 @@ type LockServer struct {
 func (ls *LockServer) Lock(args *LockArgs, reply *LockReply) error {
 	ls.mu.Lock()
 	defer ls.mu.Unlock()
-
 
 	locked, _ := ls.locks[args.Lockname]
 
@@ -93,7 +91,6 @@ func StartServer(primary string, backup string, am_primary bool) *LockServer {
 	ls.locks = map[string]bool{}
 
 	// Your initialization code here.
-
 
 	me := ""
 	if am_primary {

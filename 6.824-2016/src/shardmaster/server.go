@@ -1,6 +1,5 @@
 package shardmaster
 
-
 import "raft"
 import "labrpc"
 import "sync"
@@ -20,7 +19,6 @@ type ShardMaster struct {
 	ack       map[int64]int
 	configNum int
 }
-
 
 type Op struct {
 	// Your data here.
@@ -239,13 +237,12 @@ func (sm *ShardMaster) getOneShardByGID(gid int) int {
 	return -1
 }
 
-
 func (sm *ShardMaster) rebalanceJoin(gid int) {
 	config := &sm.configs[sm.configNum]
 	i := 0
 
 	for {
-		if i == NShards / len(config.Groups) {
+		if i == NShards/len(config.Groups) {
 			break
 		}
 		max := sm.getMaxShardCountGID()

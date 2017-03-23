@@ -1,9 +1,9 @@
 package mapreduce
 
 import (
-	"os"
 	"encoding/json"
 	"log"
+	"os"
 )
 
 // doReduce does the job of a reduce worker: it reads the intermediate
