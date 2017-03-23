@@ -13,7 +13,6 @@ import "encoding/gob"
 import "math/rand"
 import "time"
 
-
 const Debug = 0
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
@@ -22,7 +21,6 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 	}
 	return
 }
-
 
 type Op struct {
 	// Your definitions here.
@@ -56,7 +54,7 @@ func (kv *KVPaxos) wait(seq int) Op {
 			return v.(Op)
 		}
 		time.Sleep(to)
-		if to < 10 * time.Second {
+		if to < 10*time.Second {
 			to *= 2
 		}
 	}
@@ -198,7 +196,6 @@ func StartServer(servers []string, me int) *KVPaxos {
 		log.Fatal("listen error: ", e)
 	}
 	kv.l = l
-
 
 	// please do not change any of the following code,
 	// or do anything to subvert it.

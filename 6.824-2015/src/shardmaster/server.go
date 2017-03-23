@@ -26,20 +26,19 @@ type ShardMaster struct {
 	unreliable int32 // for testing
 	px         *paxos.Paxos
 
-	configs []Config // indexed by config num
+	configs    []Config // indexed by config num
 	currentSeq int
-	configNum int
+	configNum  int
 }
-
 
 type Op struct {
 	// Your data here.
-	Op string
-	Num int
-	GID int64
+	Op      string
+	Num     int
+	GID     int64
 	Servers []string
-	Shard int
-	Id int64
+	Shard   int
+	Id      int64
 }
 
 func (sm *ShardMaster) wait(seq int) Op {
@@ -50,7 +49,7 @@ func (sm *ShardMaster) wait(seq int) Op {
 			return v.(Op)
 		}
 		time.Sleep(to)
-		if to < 10 * time.Second {
+		if to < 10*time.Second {
 			to *= 2
 		}
 	}
@@ -120,7 +119,7 @@ func (sm *ShardMaster) balanceJoin(gid int64) {
 	config := &sm.configs[sm.configNum]
 	index := 0
 	for {
-		if index == NShards / len(config.Groups) {
+		if index == NShards/len(config.Groups) {
 			break
 		}
 		max_gid := GetMaxCountGid(config)

@@ -75,7 +75,7 @@ func (ck *Clerk) Get(key string) string {
 		var reply GetReply
 		ok := call(ck.servers[i], "KVPaxos.Get", args, &reply)
 		if !ok {
-			i = (i+1) % len(ck.servers)
+			i = (i + 1) % len(ck.servers)
 			continue
 		}
 
@@ -101,9 +101,9 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 		args.Value = value
 		args.Op = op
 		var reply PutAppendReply
-		ok := call(ck.servers[i], "KVPaxos.PutAppend", args, &reply);
+		ok := call(ck.servers[i], "KVPaxos.PutAppend", args, &reply)
 		if !ok {
-			i = (i+1) % len(ck.servers)
+			i = (i + 1) % len(ck.servers)
 			continue
 		}
 		return

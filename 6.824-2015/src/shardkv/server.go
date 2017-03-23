@@ -14,7 +14,6 @@ import "encoding/gob"
 import "math/rand"
 import "shardmaster"
 
-
 const Debug = 0
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
@@ -24,19 +23,17 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 	return
 }
 
-
 type Op struct {
 	// Your definitions here.
-	Op        string
-	Key       string
-	Value     string
-	Seq       int64
-	Client    string
-	Id        int64
-	Config    shardmaster.Config
-	Reconfig  GetShardReply
+	Op       string
+	Key      string
+	Value    string
+	Seq      int64
+	Client   string
+	Id       int64
+	Config   shardmaster.Config
+	Reconfig GetShardReply
 }
-
 
 type ShardKV struct {
 	mu         sync.Mutex
@@ -50,14 +47,13 @@ type ShardKV struct {
 	gid int64 // my replica group ID
 
 	// Your definitions here.
-	content    map[string] string
-	seen       map[string] int64
-	replies    map[string] string
+	content map[string]string
+	seen    map[string]int64
+	replies map[string]string
 
 	currentSeq int
 	config     shardmaster.Config
 }
-
 
 func (kv *ShardKV) wait(seq int) Op {
 	to := 10 * time.Millisecond
@@ -67,7 +63,7 @@ func (kv *ShardKV) wait(seq int) Op {
 			return v.(Op)
 		}
 		time.Sleep(to)
-		if to < 10 * time.Second {
+		if to < 10*time.Second {
 			to *= 2
 		}
 	}
@@ -188,7 +184,7 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	key, value, seq, ck, op := args.Key, args.Value, args.Seq, args.Me, args.Op
-	_, reply.Err = kv.runPaxos(Op{Op: op, Key: key, Value: value, Seq: seq, Client:ck })
+	_, reply.Err = kv.runPaxos(Op{Op: op, Key: key, Value: value, Seq: seq, Client: ck})
 	return nil
 }
 
@@ -200,7 +196,7 @@ func (kv *ShardKV) GetShard(args *GetShardArgs, reply *GetShardReply) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	shard := args.Shard
-	kv.runPaxos(Op{Op:"GetShard"})
+	kv.runPaxos(Op{Op: "GetShard"})
 
 	reply.Content = map[string]string{}
 	reply.Seen = map[string]int64{}
@@ -240,15 +236,15 @@ func (kv *ShardKV) Reconfigure(newConfig shardmaster.Config) bool {
 
 	oldConfig := &kv.config
 
-	for i := 0 ; i < shardmaster.NShards ; i++ {
+	for i := 0; i < shardmaster.NShards; i++ {
 		gid := oldConfig.Shards[i]
 		if newConfig.Shards[i] == kv.gid && gid != kv.gid {
 			args := &GetShardArgs{i, *oldConfig}
 			var reply GetShardReply
 			for _, server := range oldConfig.Groups[gid] {
-				ok := call(server,"ShardKV.GetShard", args, &reply)
+				ok := call(server, "ShardKV.GetShard", args, &reply)
 				if ok && reply.Err == OK {
-					break;
+					break
 				}
 				if ok && reply.Err == ErrNotReady {
 					return false
@@ -273,7 +269,7 @@ func (kv *ShardKV) tick() {
 	defer kv.mu.Unlock()
 
 	newConfig := kv.sm.Query(-1)
-	for i := kv.config.Num+1 ; i <= newConfig.Num ; i++ {
+	for i := kv.config.Num + 1; i <= newConfig.Num; i++ {
 		config := kv.sm.Query(i)
 		if !kv.Reconfigure(config) {
 			return
@@ -327,17 +323,16 @@ func StartServer(gid int64, shardmasters []string,
 
 	// Your initialization code here.
 	// Don't call Join().
-	kv.content = map[string] string{}
-	kv.seen = map[string] int64{}
-	kv.replies = map[string] string{}
+	kv.content = map[string]string{}
+	kv.seen = map[string]int64{}
+	kv.replies = map[string]string{}
 	kv.currentSeq = 0
-	kv.config = shardmaster.Config{Num:-1}
+	kv.config = shardmaster.Config{Num: -1}
 
 	rpcs := rpc.NewServer()
 	rpcs.Register(kv)
 
 	kv.px = paxos.Make(servers, me, rpcs)
-
 
 	os.Remove(servers[me])
 	l, e := net.Listen("unix", servers[me])

@@ -20,9 +20,9 @@ type PBServer struct {
 	me         string
 	vs         *viewservice.Clerk
 	// Your declarations here.
-	view       viewservice.View
-	database   map[string]string
-	clients    map[int64]string
+	view     viewservice.View
+	database map[string]string
+	clients  map[int64]string
 }
 
 func (pb *PBServer) get(args *GetArgs, reply *GetReply) {
@@ -210,7 +210,6 @@ func (pb *PBServer) setunreliable(what bool) {
 func (pb *PBServer) isunreliable() bool {
 	return atomic.LoadInt32(&pb.unreliable) != 0
 }
-
 
 func StartServer(vshost string, me string) *PBServer {
 	pb := new(PBServer)

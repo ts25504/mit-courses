@@ -16,11 +16,10 @@ type ViewServer struct {
 	rpccount int32 // for testing
 	me       string
 
-
 	// Your declarations here.
 	currentview View
-	recenttime map[string]time.Time
-	ack bool
+	recenttime  map[string]time.Time
+	ack         bool
 }
 
 func (vs *ViewServer) promote() {
@@ -57,29 +56,29 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 	defer vs.mu.Unlock()
 
 	switch args.Me {
-		case vs.currentview.Primary:
-			if args.Viewnum == vs.currentview.Viewnum {
-				vs.ack = true
-				vs.recenttime[vs.currentview.Primary] = time.Now()
-			} else {
-				if vs.ack {
-					vs.promote()
-				}
+	case vs.currentview.Primary:
+		if args.Viewnum == vs.currentview.Viewnum {
+			vs.ack = true
+			vs.recenttime[vs.currentview.Primary] = time.Now()
+		} else {
+			if vs.ack {
+				vs.promote()
 			}
-		case vs.currentview.Backup:
-			if args.Viewnum == vs.currentview.Viewnum {
-				vs.recenttime[vs.currentview.Backup] = time.Now()
-			} else {
-				if vs.ack {
-					vs.removeBackup()
-				}
+		}
+	case vs.currentview.Backup:
+		if args.Viewnum == vs.currentview.Viewnum {
+			vs.recenttime[vs.currentview.Backup] = time.Now()
+		} else {
+			if vs.ack {
+				vs.removeBackup()
 			}
-		default:
-			if vs.currentview.Primary == "" {
-				vs.acceptPrimary(args.Me)
-			} else if vs.currentview.Backup == "" && vs.ack {
-				vs.acceptBackup(args.Me)
-			}
+		}
+	default:
+		if vs.currentview.Primary == "" {
+			vs.acceptPrimary(args.Me)
+		} else if vs.currentview.Backup == "" && vs.ack {
+			vs.acceptBackup(args.Me)
+		}
 	}
 
 	reply.View = vs.currentview
@@ -101,7 +100,6 @@ func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
 	return nil
 }
 
-
 //
 // tick() is called once per PingInterval; it should notice
 // if servers have died or recovered, and change the view
@@ -122,7 +120,7 @@ func (vs *ViewServer) tick() {
 	if vs.currentview.Primary != "" {
 		t2 := vs.recenttime[vs.currentview.Primary]
 
-		if t1.Sub(t2) > DeadPings * PingInterval {
+		if t1.Sub(t2) > DeadPings*PingInterval {
 			vs.promote()
 		}
 	}
@@ -130,7 +128,7 @@ func (vs *ViewServer) tick() {
 	if vs.currentview.Backup != "" {
 		t2 := vs.recenttime[vs.currentview.Backup]
 
-		if t1.Sub(t2) > DeadPings * PingInterval {
+		if t1.Sub(t2) > DeadPings*PingInterval {
 			vs.removeBackup()
 		}
 	}

@@ -45,9 +45,9 @@ const (
 )
 
 type InstanceInfo struct {
-	np int64
-	na int64
-	va interface{}
+	np     int64
+	na     int64
+	va     interface{}
 	status Fate
 }
 
@@ -60,14 +60,13 @@ type Paxos struct {
 	peers      []string
 	me         int // index into peers[]
 
-
 	// Your data here.
-	instances  map[int]*InstanceInfo
-	maxdone    []int
+	instances map[int]*InstanceInfo
+	maxdone   []int
 }
 
 const (
-	Ok = "Ok"
+	Ok     = "Ok"
 	Reject = "Reject"
 )
 
@@ -77,14 +76,14 @@ type PrepareArgs struct {
 }
 
 type PrepareReply struct {
-	Err string
-	Num int64
+	Err   string
+	Num   int64
 	Value interface{}
 }
 
 type AcceptArgs struct {
-	Seq int
-	Num int64
+	Seq   int
+	Num   int64
 	Value interface{}
 }
 
@@ -93,11 +92,11 @@ type AcceptReply struct {
 }
 
 type DecidedArgs struct {
-	Seq int
-	Num int64
+	Seq   int
+	Num   int64
 	Value interface{}
-	Me int
-	Done int
+	Me    int
+	Done  int
 }
 
 type DecidedReply struct {
@@ -211,7 +210,7 @@ func (px *Paxos) sendPrepare(seq int, v interface{}, num int64) (bool, interface
 		}
 	}
 
-	if acceptCount >= len(px.peers) / 2 + 1 {
+	if acceptCount >= len(px.peers)/2+1 {
 		return true, acceptValue
 	}
 
@@ -269,7 +268,7 @@ func (px *Paxos) sendAccept(seq int, v interface{}, num int64) bool {
 		}
 	}
 
-	if acceptCount >= len(px.peers) / 2 + 1 {
+	if acceptCount >= len(px.peers)/2+1 {
 		return true
 	}
 
@@ -315,7 +314,7 @@ func (px *Paxos) sendDecided(seq int, v interface{}, num int64) {
 func (px *Paxos) proposer(seq int, v interface{}) {
 	for {
 		num := px.getNum()
-		ok, va := px.sendPrepare(seq, v, num);
+		ok, va := px.sendPrepare(seq, v, num)
 		if ok {
 			if px.sendAccept(seq, va, num) {
 				px.sendDecided(seq, va, num)
@@ -461,8 +460,6 @@ func (px *Paxos) Status(seq int) (Fate, interface{}) {
 	return px.instances[seq].status, px.instances[seq].va
 }
 
-
-
 //
 // tell the peer to shut itself down.
 // for testing.
@@ -504,7 +501,6 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 	px := &Paxos{}
 	px.peers = peers
 	px.me = me
-
 
 	// Your initialization code here.
 	px.instances = make(map[int]*InstanceInfo)
@@ -563,7 +559,6 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 			}
 		}()
 	}
-
 
 	return px
 }

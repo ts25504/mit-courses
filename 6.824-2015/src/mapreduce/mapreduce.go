@@ -79,7 +79,7 @@ func InitMapReduce(nmap int, nreduce int,
 	mr.DoneChannel = make(chan bool)
 
 	// initialize any additional state here
-	mr.idleWorkerChannel = make(chan string, mr.nMap + mr.nReduce)
+	mr.idleWorkerChannel = make(chan string, mr.nMap+mr.nReduce)
 
 	return mr
 }

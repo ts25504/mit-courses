@@ -3,7 +3,6 @@ package lockservice
 import "net/rpc"
 import "fmt"
 
-
 //
 // the lockservice Clerk lives in the client
 // and maintains a little state.
@@ -12,7 +11,6 @@ type Clerk struct {
 	servers [2]string // primary port, backup port
 	// Your definitions here.
 }
-
 
 func MakeClerk(primary string, backup string) *Clerk {
 	ck := new(Clerk)
@@ -77,7 +75,6 @@ func (ck *Clerk) Lock(lockname string) bool {
 
 	return reply.OK
 }
-
 
 //
 // ask the lock service to unlock a lock.

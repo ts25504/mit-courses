@@ -14,8 +14,8 @@ type Clerk struct {
 	sm     *shardmaster.Clerk
 	config shardmaster.Config
 	// You'll have to modify Clerk.
-	me     string
-	seq    int64
+	me  string
+	seq int64
 }
 
 func nrand() int64 {

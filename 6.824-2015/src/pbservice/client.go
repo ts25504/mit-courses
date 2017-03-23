@@ -8,7 +8,6 @@ import "time"
 import "crypto/rand"
 import "math/big"
 
-
 type Clerk struct {
 	vs *viewservice.Clerk
 	// Your declarations here
@@ -31,7 +30,6 @@ func MakeClerk(vshost string, me string) *Clerk {
 
 	return ck
 }
-
 
 //
 // call() sends an RPC to the rpcname handler on server srv
